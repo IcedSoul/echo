@@ -1,0 +1,2385 @@
+# Wavecho（回声）MVP 技术与产品设计文档
+
+**版本**: v1.0  
+**日期**: 2025-11-26  
+**文档状态**: 设计阶段
+
+---
+
+## 1. 项目概述
+
+### 1.1 产品简介
+
+**Wavecho**（中文名：回声）是一个基于大语言模型的情感关系复盘与沟通辅助应用。
+
+**核心价值主张**：
+- 帮助用户在亲密关系、社交关系中，以第三方视角复盘冲突对话
+- 通过 AI 分析冲突的核心矛盾、情绪动因和真实需求
+- 提供温和、安全、可执行的沟通建议，降低关系修复门槛
+
+**产品定位**：
+- 不是心理咨询替代品，而是日常沟通的"冷静剂"和"翻译官"
+- 面向普通用户的轻量级情感工具，注重隐私与安全
+- 强调"回声"概念：让用户听见对话中被忽略的声音
+
+### 1.2 MVP 范围界定
+
+本 MVP 版本专注于验证核心价值假设，功能范围严格限定为：
+
+**必做功能（P0）**：
+1. 简单的用户身份识别（邮箱 + 验证码登录，或 UUID 匿名模式）
+2. 矛盾复盘单次分析流程：
+   - 输入：聊天记录文本 + 可选背景描述
+   - 处理：风险分级 → LLM 分析 → 安全审查
+   - 输出：结构化分析结果（时间线、情绪、需求、建议）
+3. 分析结果展示页（单页详情）
+
+**可选功能（P1，设计预留但不强制实现）**：
+- 历史记录列表页
+- 分析记录的本地/云端持久化
+
+**明确不做（V1 之后）**：
+- 实时聊天分析
+- 多人协作复盘
+- 付费订阅体系
+- 社区分享功能
+
+---
+
+## 2. 关键用户故事 & 用例
+
+### 2.1 典型用户画像
+
+**画像 A：年轻情侣 —— 小雨（25 岁，互联网运营）**
+- **痛点**：和男友因小事争吵后,明知道应该主动和好，但不知道怎么开口，担心说错话加剧矛盾
+- **使用场景**：吵架后冷静期，在独处时打开 Wavecho，粘贴聊天记录，看看"AI 怎么看这件事"
+- **期望**：得到一个不偏袒任何一方的客观分析，以及几条可以直接发送的和解消息模板
+
+**画像 B：职场新人 —— 阿杰（23 岁，设计师）**
+- **痛点**：和同事/领导沟通不畅，事后反思时陷入自我怀疑，不确定是对方的问题还是自己的问题
+- **使用场景**：下班后复盘工作对话，理解对方真实意图，避免下次重复冲突
+- **期望**：明确矛盾根源，提升沟通能力
+
+### 2.2 核心使用场景
+
+**场景 1：情侣吵架后的和解复盘**
+
+> **背景**：昨晚因为项链没解开的小事吵架，双方都觉得委屈  
+> **用户操作**：
+> 1. 打开 Wavecho，进入"矛盾复盘"页面
+> 2. 粘贴昨晚的微信聊天记录（约 20 条消息）
+> 3. 补充背景："因为我催她快点解开项链，她觉得我不耐烦"
+> 4. 点击"开始分析"按钮
+> 
+> **系统响应**：
+> - 显示加载动画（预计 10-30 秒）
+> - 返回分析结果页，包含：
+>   - 事件时间线：冲突如何升级
+>   - 我的情绪：焦虑 → 不耐烦 → 委屈
+>   - 对方情绪：紧张 → 受伤 → 愤怒
+>   - 核心矛盾：表面是项链，实际是"被催促时的压力感"与"对效率的不同预期"
+>   - 3 条建议消息（温和道歉版 / 解释版 / 幽默化解版）
+> 
+> **用户收益**：理解了对方不是无理取闺，而是被催促时感到不被理解；获得了和解的具体话术
+
+**场景 2：高风险对话的安全提示**
+
+> **背景**：用户粘贴了包含"不想活了""消失算了"等极端表述的聊天记录  
+> **系统响应**：
+> - 风险分类器检测到 `riskLevel: HIGH`，标签包含 `self_harm`
+> - Orchestrator 切换到"高风险安全模式"
+> - LLM 返回的建议不包含"立刻道歉""主动示好"等可能加剧心理负担的内容
+> - 结果页顶部显示橙/红色提示卡片：
+>   - "我们注意到对话中包含情绪危机信号。如果您或对方正在经历严重的情绪困扰，请考虑："
+>   - 提供心理援助热线（如 Beijing Suicide Research and Prevention Center：010-82951332）
+>   - 建议寻求专业心理咨询支持
+> - 分析结果聚焦于"情绪支持"和"专业求助引导"，而非解决具体矛盾
+
+**场景 3：普通日常对话的轻量分析**
+
+> **背景**：用户想复盘和朋友关于周末安排的讨论，只是觉得"有点尴尬"但不严重  
+> **系统响应**：
+> - 风险分类器判定 `riskLevel: LOW`
+> - 使用标准分析模板，正常返回时间线、情绪、建议
+> - 不显示任何风险提示卡片
+> - 建议语气轻松，例如"可以试着直接问对方时间偏好"
+
+---
+
+## 3. 整体系统架构概览
+
+### 3.1 架构分层
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     客户端层 (Client Layer)                    │
+│                  React Native + Expo (iOS/Android)           │
+│  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐     │
+│  │  登录/注册页   │  │  矛盾复盘页   │  │  分析结果页    │     │
+│  └──────────────┘  └──────────────┘  └───────────────┘     │
+│           └─────────────┬─────────────┘                     │
+│                         │ HTTPS / REST API                  │
+└─────────────────────────┼─────────────────────────────────┘
+                          │
+┌─────────────────────────┼─────────────────────────────────┐
+│                    API 网关层 (API Gateway)                  │
+│                      FastAPI (Python 3.11+)                 │
+│  ┌──────────────────────────────────────────────────┐      │
+│  │  /api/auth/*        - 用户认证接口                │      │
+│  │  /api/analyze-conflict  - 矛盾分析接口（核心）    │      │
+│  │  /api/sessions/*    - 历史记录接口（可选）         │      │
+│  └──────────────────────────────────────────────────┘      │
+│              └──────────┬──────────┘                        │
+│                         │                                   │
+└─────────────────────────┼─────────────────────────────────┘
+                          │
+┌─────────────────────────┼─────────────────────────────────┐
+│                  业务服务层 (Service Layer)                  │
+│  ┌────────────────┐  ┌──────────────────┐                 │
+│  │  AuthService   │  │  AnalysisOrchestrator │            │
+│  │  用户认证/会话   │  │  核心分析编排逻辑      │            │
+│  └────────────────┘  └──────────────────┘                 │
+│                           │                                │
+│         ┌─────────────────┼─────────────────┐             │
+│         │                 │                 │             │
+│  ┌──────▼──────┐   ┌──────▼──────┐   ┌─────▼──────┐     │
+│  │RiskClassifier│   │  LLMClient  │   │ResponseGuard│     │
+│  │ 风险分类器    │   │ 大模型调用   │   │  安全审查    │     │
+│  └──────────────┘   └──────────────┘   └─────────────┘     │
+└─────────────────────────────────────────────────────────────┘
+                          │
+┌─────────────────────────┼─────────────────────────────────┐
+│                  数据存储层 (Data Layer)                     │
+│  ┌─────────────────────────────────────────────┐          │
+│  │           MongoDB (推荐) / PostgreSQL        │          │
+│  │  - users          用户集合                   │          │
+│  │  - analysis_sessions  分析会话集合           │          │
+│  │  - audit_logs     审计日志集合（可选）        │          │
+│  └─────────────────────────────────────────────┘          │
+└─────────────────────────────────────────────────────────────┘
+                          │
+┌─────────────────────────┼─────────────────────────────────┐
+│                  外部服务层 (External Services)              │
+│  ┌──────────────┐    ┌──────────────┐                     │
+│  │OpenAI / 其他  │    │ 邮件服务       │                     │
+│  │  LLM API     │    │(验证码发送)    │                     │
+│  └──────────────┘    └──────────────┘                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 3.2 核心数据流：矛盾分析全流程
+
+**步骤 1**：用户在前端提交分析请求
+```
+POST /api/analyze-conflict
+Body: {
+  "conversationText": "...",
+  "contextDescription": "...",
+  "userId": "uuid"
+}
+```
+
+**步骤 2**：API 层接收请求，调用 `AnalysisOrchestrator.analyze()`
+
+**步骤 3**：Orchestrator 编排以下流程：
+
+1. **数据持久化**：将原始输入写入 `analysis_sessions` 集合（status: `processing`）
+2. **风险分类**：调用 `RiskClassifier.classify(conversationText)` 
+   - 输出：`{ riskLevel: "LOW|MEDIUM|HIGH|CRITICAL", tags: [...] }`
+3. **Prompt 选择**：根据 `riskLevel` 选择对应的 Prompt 模板
+   - LOW/MEDIUM → 标准分析模板
+   - HIGH → 谨慎模式模板（强调情绪支持）
+   - CRITICAL → 高风险安全模板（仅输出求助引导）
+4. **LLM 调用**：`LLMClient.generate(prompt)` 
+   - 超时设置：30 秒
+   - 重试策略：最多 2 次
+   - 返回 JSON 结构化结果
+5. **安全审查**：`ResponseGuard.validate(llmResponse, riskLevel)`
+   - 检测禁止内容（暴力、自残鼓励等）
+   - 如不通过，尝试让 LLM 改写（Self-Refine）或降级输出
+6. **结果存储**：更新 `analysis_sessions` 状态为 `completed`，保存最终结果
+7. **返回前端**：返回安全版的结构化分析 JSON
+
+**步骤 4**：前端接收结果，渲染卡片式展示页面
+
+### 3.3 技术栈选型说明
+
+| 层级 | 技术选型 | 理由 |
+|------|---------|------|
+| **前端框架** | React Native + Expo | 跨平台开发效率高，Expo 提供丰富的开箱即用功能（OTA 更新、推送通知预留） |
+| **前端语言** | TypeScript | 类型安全，降低运行时错误，提升协作效率 |
+| **状态管理** | React Query + Context API | React Query 处理异步数据缓存，Context 处理全局主题/用户状态 |
+| **后端框架** | FastAPI (Python 3.11+) | 高性能异步框架，**自动生成 Swagger 文档**，与 LLM 生态兼容性好 |
+| **Python 包管理** | **uv** ⚡ | 极速依赖安装（比 pip 快 10-100 倍）、现代化工作流、兼容 pip 生态、支持虚拟环境自动管理 |
+| **数据库** | **MongoDB**（推荐） | 文档型存储适合存储非结构化聊天记录与灵活的分析结果 JSON；索引性能好；易于扩展字段 |
+| **数据库部署** | **Docker Compose** 🐳 | 本地开发一键启动、环境隔离、配置即代码、易于迁移到生产环境 |
+| **LLM 调用** | 自封装 httpx 客户端 | 不依赖 LangChain，保持代码轻量与可控；支持多 LLM 提供商切换 |
+| **认证方案** | JWT + 邮箱验证码 | MVP 阶段简单可靠；预留 OAuth2（微信/Apple 登录）扩展接口 |
+| **项目命令管理** | **npm scripts** 📦 | 统一前后端命令入口（`npm run dev`）、降低学习成本、便于 CI/CD 集成 |
+
+**数据库选型理由（MongoDB vs PostgreSQL）**：
+
+✅ **推荐 MongoDB**：
+- 聊天记录是非结构化文本，JSON 存储更自然
+- 分析结果字段可能随 LLM 输出迭代而变化，Schema-less 更灵活
+- 单文档操作为主，无复杂多表 JOIN 需求
+- 横向扩展更容易（为未来百万用户做准备）
+
+❌ **PostgreSQL 的劣势**：
+- JSONB 字段虽然支持，但查询性能不如 MongoDB 原生文档查询
+- 需要提前设计严格的表结构，迭代成本高
+
+**开发工具链选型说明**：
+
+**为什么选择 uv？**
+- **速度**：Rust 编写，依赖解析和安装速度比 pip 快 10-100 倍
+- **现代化**：自动管理虚拟环境，无需手动 `venv` 和 `activate`
+- **兼容性**：完全兼容 PyPI 生态，支持 `requirements.txt` 和 `pyproject.toml`
+- **开发体验**：`uv add`、`uv run` 等命令直观易用，类似 npm/pnpm
+
+**为什么使用 Docker Compose 部署数据库？**
+- **环境一致性**：团队成员无需手动安装 MongoDB，一条命令启动
+- **配置即代码**：数据库版本、端口、用户密码等写在 `docker-compose.yml` 中
+- **易于清理**：`npm run db:reset` 即可重置数据库，避免本地环境污染
+- **生产就绪**：开发环境的 Compose 配置可直接扩展为生产环境配置
+
+**为什么使用 npm 统一管理命令？**
+- **统一入口**：前端工程师习惯 npm，后端也用 npm scripts 降低认知负担
+- **跨平台**：npm scripts 在 Windows/macOS/Linux 均可运行
+- **并发管理**：通过 `concurrently` 同时启动多个服务（数据库 + 后端 + 前端）
+- **CI/CD 友好**：`npm run test` / `npm run build` 等命令易于集成到 GitHub Actions
+
+---
+
+## 4. 前端设计（React Native + Expo）
+
+### 4.1 页面结构与导航
+
+#### 4.1.1 页面列表（MVP 必做）
+
+| 页面名称 | 路由 | 说明 |
+|---------|------|------|
+| **WelcomeScreen** | `/welcome` | 欢迎页 + 品牌展示，首次启动显示，提供"登录"和"匿名试用"入口 |
+| **AuthScreen** | `/auth` | 登录/注册页面（邮箱 + 验证码输入） |
+| **AnalyzeInputScreen** | `/analyze` | 矛盾复盘输入页（主功能页），包含文本框、背景描述、提交按钮 |
+| **ResultScreen** | `/result/:sessionId` | 分析结果展示页（卡片式布局） |
+| **LoadingScreen** | `/loading` | 分析处理中的加载页（带呼吸动画） |
+
+#### 4.1.2 页面列表（P1 可选）
+
+| 页面名称 | 路由 | 说明 |
+|---------|------|------|
+| **HistoryScreen** | `/history` | 历史记录列表页（卡片列表，点击进入详情） |
+| **SettingsScreen** | `/settings` | 设置页（账号信息、隐私设置、主题切换预留） |
+
+#### 4.1.3 导航结构
+
+**导航方案**：Stack Navigator（React Navigation v6）
+
+```
+AppNavigator (Stack)
+├── WelcomeScreen        (初次启动)
+├── AuthScreen           (登录注册)
+└── MainStack
+    ├── AnalyzeInputScreen    (主页，header 显示 Logo)
+    ├── LoadingScreen          (Modal 形式)
+    └── ResultScreen           (可返回主页)
+```
+
+**未来扩展**（V2）：底部 Tab Navigator
+```
+TabNavigator
+├── Tab1: AnalyzeInputScreen  (首页)
+├── Tab2: HistoryScreen       (历史)
+└── Tab3: SettingsScreen      (设置)
+```
+
+### 4.2 主要组件设计
+
+#### 4.2.1 AnalyzeInputScreen 组件拆分
+
+```
+AnalyzeInputScreen/
+├── components/
+│   ├── ConversationInput.tsx      // 多行文本输入框（主输入区）
+│   ├── ContextInput.tsx           // 背景描述输入框（可选）
+│   ├── SubmitButton.tsx           // 提交按钮（带加载状态）
+│   ├── ExampleCard.tsx            // 示例卡片（引导用户如何输入）
+│   └── SafetyDisclaimer.tsx       // 底部安全免责声明
+```
+
+**交互细节**：
+- `ConversationInput`：多行输入，最小高度 200px，自动扩展，字数统计（建议 50-2000 字）
+- `ContextInput`：单行或短文本框，占位符："（可选）简单描述一下背景…"
+- `SubmitButton`：点击后禁用，显示 Spinner + "分析中…"文字，跳转到 LoadingScreen
+- `ExampleCard`：可折叠，展示 1-2 个示例对话，帮助用户理解输入格式
+
+#### 4.2.2 ResultScreen 组件拆分
+
+```
+ResultScreen/
+├── components/
+│   ├── SafetyAlert.tsx           // 风险提示卡片（HIGH/CRITICAL 时显示）
+│   ├── TimelineCard.tsx          // 事件时间线卡片
+│   ├── EmotionCard.tsx           // 情绪分析卡片（分"我"和"对方"）
+│   ├── NeedsCard.tsx             // 需求分析卡片
+│   ├── AdviceCard.tsx            // 建议消息模板卡片（可点击复制）
+│   └── ShareButton.tsx           // 分享/导出按钮（V2 功能，MVP 可隐藏）
+```
+
+**布局方式**：垂直滚动 ScrollView，卡片间距 16px
+
+**卡片通用样式**：
+- 背景色：`backgroundSoft` (#ECEFF4)
+- 圆角：12px
+- 内边距：16px
+- 卡片阴影：轻微（elevation: 2）
+- 标题字号：H2 (18-20)
+- 正文字号：Body (15-16)
+
+#### 4.2.3 LoadingScreen 设计
+
+**视觉元素**：
+- 中央显示 Wavecho Logo（波纹形态）
+- Logo 做轻微缩放呼吸动画（scale: 1.0 ↔ 1.05，duration: 2s，easing: ease-in-out）
+- 下方显示随机加载文案（每 3 秒切换）：
+  - "正在梳理对话脉络…"
+  - "分析情绪与需求…"
+  - "生成温和的建议…"
+- 背景色：`backgroundSoft`
+
+**超时处理**：
+- 如果 30 秒后仍未返回结果，显示"分析时间较长，请稍候"提示
+- 60 秒后显示"网络超时，请重试"，提供返回按钮
+
+### 4.3 状态管理方案
+
+**方案选型**：React Query + Context API
+
+#### 4.3.1 React Query 负责
+
+- 所有异步 API 请求的缓存与状态管理
+- 核心查询：
+  - `useAnalyzeConflict()`: POST /api/analyze-conflict
+  - `useAnalysisResult(sessionId)`: GET /api/sessions/:sessionId (P1 功能)
+  - `useHistory()`: GET /api/sessions (P1 功能)
+
+**示例伪代码**：
+```typescript
+// hooks/useAnalyzeConflict.ts
+export const useAnalyzeConflict = () => {
+  return useMutation({
+    mutationFn: async (data: AnalyzeRequest) => {
+      const response = await apiClient.post('/analyze-conflict', data);
+      return response.data;
+    },
+    onSuccess: (result) => {
+      // 导航到 ResultScreen
+      navigation.navigate('Result', { sessionId: result.sessionId });
+    },
+    onError: (error) => {
+      // 显示错误提示
+      Alert.alert('分析失败', error.message);
+    }
+  });
+};
+```
+
+#### 4.3.2 Context API 负责
+
+- **UserContext**：用户信息（userId, email, isAnonymous）
+- **ThemeContext**：主题配置（颜色、字体、间距），MVP 只实现浅色模式，但结构预留深色切换
+
+**ThemeContext 结构示例**（伪代码）：
+```typescript
+interface Theme {
+  colors: {
+    primary: string;       // #4A5FA4
+    accent: string;        // #5EB5A6
+    backgroundSoft: string; // #ECEFF4
+    backgroundWhite: string; // #FFFFFF
+    textPrimary: string;   // #1C1C1C
+    textSecondary: string; // #6B7280
+    warning: string;       // #F5A261
+    danger: string;        // #D64545
+  };
+  typography: {
+    h1: { fontSize: 24, fontWeight: '600' };
+    h2: { fontSize: 18, fontWeight: '600' };
+    body: { fontSize: 15, fontWeight: '400' };
+    caption: { fontSize: 12, fontWeight: '400' };
+  };
+  spacing: {
+    xs: 4, sm: 8, md: 16, lg: 24, xl: 32
+  };
+  borderRadius: {
+    small: 8, medium: 12, large: 16
+  };
+}
+```
+
+### 4.4 主题与样式系统设计
+
+#### 4.4.1 配色方案（Light Mode）
+
+| 变量名 | HEX 值 | 用途 |
+|--------|--------|------|
+| `primary` | `#4A5FA4` | 主要按钮、导航栏、品牌色 (Wave Indigo) |
+| `accent` | `#5EB5A6` | 成功提示、小标签、积极情绪 (Soft Teal) |
+| `backgroundSoft` | `#ECEFF4` | 页面背景、卡片背景 (Mist Gray) |
+| `backgroundWhite` | `#FFFFFF` | 纯白卡片、输入框背景 |
+| `textPrimary` | `#1C1C1C` | 正文文字 (Ink Black) |
+| `textSecondary` | `#6B7280` | 辅助文字、说明文案 |
+| `warning` | `#F5A261` | 中等风险提示 (Warm Orange) |
+| `danger` | `#D64545` | 高风险提示（仅用于自残/暴力警告） (Alert Red) |
+| `border` | `#D1D5DB` | 输入框边框、分割线 |
+
+#### 4.4.2 字体层级
+
+**字体家族**：
+- 中文：优先使用 `HarmonyOS Sans`（华为鸿蒙字体），降级到系统 Sans Serif
+- 英文/数字：`Inter`，降级到系统 Sans Serif
+- 通过 `expo-font` 加载自定义字体
+
+**字号与权重**：
+```typescript
+typography: {
+  h1: { fontSize: 24, fontWeight: '600', lineHeight: 32 },  // 页面标题
+  h2: { fontSize: 18, fontWeight: '600', lineHeight: 24 },  // 卡片标题
+  body: { fontSize: 15, fontWeight: '400', lineHeight: 22 }, // 正文
+  caption: { fontSize: 12, fontWeight: '400', lineHeight: 16 }, // 辅助说明
+  button: { fontSize: 16, fontWeight: '600', lineHeight: 20 }, // 按钮文字
+}
+```
+
+#### 4.4.3 组件样式规范
+
+**按钮样式**（PrimaryButton）：
+- 背景色：`primary` (#4A5FA4)
+- 文字颜色：白色 (#FFFFFF)
+- 圆角：`borderRadius.medium` (12px)
+- 高度：48px
+- 内边距：水平 24px
+- Hover/按下状态：背景色加深 10%（`#3E4F8A`）
+
+**卡片样式**（Card）：
+- 背景色：`backgroundWhite` (#FFFFFF)
+- 圆角：`borderRadius.medium` (12px)
+- 内边距：16px
+- 阴影（iOS）：shadowColor: #000, shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: {width: 0, height: 2}
+- 阴影（Android）：elevation: 2
+
+**输入框样式**（TextInput）：
+- 背景色：`backgroundWhite`
+- 边框：1px solid `border` (#D1D5DB)
+- 聚焦边框：2px solid `primary` (#4A5FA4)
+- 圆角：`borderRadius.small` (8px)
+- 内边距：12px
+- 字号：`body` (15px)
+
+#### 4.4.4 动效规范
+
+**过渡动效**：
+- 页面切换：淡入淡出（Fade），duration: 200ms
+- 卡片加载：从下向上滑入（SlideUp），duration: 300ms，easing: ease-out
+- 按钮点击：轻微缩放（Scale 0.98），duration: 100ms
+
+**呼吸动效**（LoadingScreen Logo）：
+- 属性：scale
+- 范围：1.0 ↔ 1.05
+- Duration：2000ms
+- Easing：ease-in-out
+- Loop：infinite
+
+**不使用的动效**：
+- ❌ 夸张的弹跳（Bounce）
+- ❌ 3D 翻转
+- ❌ 过度的粒子效果
+
+### 4.5 错误处理与边界情况
+
+#### 4.5.1 网络错误
+
+**场景**：API 请求失败（超时、500 错误等）
+
+**处理**：
+- 显示 Toast 提示："网络连接失败，请检查网络后重试"
+- 提供"重试"按钮
+- 不跳转到结果页，停留在输入页
+
+#### 4.5.2 输入验证
+
+**场景**：用户未输入或输入过短
+
+**处理**：
+- 聊天记录文本少于 10 字：提示"请输入至少 10 字的对话内容"
+- 超过 5000 字：提示"当前版本最多支持 5000 字分析"（前端截断）
+
+#### 4.5.3 LLM 返回异常
+
+**场景**：后端返回 `analysisResult` 为空或格式错误
+
+**处理**：
+- ResultScreen 显示降级页面："抱歉，分析过程遇到问题，请稍后重试"
+- 提供"返回首页"按钮
+- 后端应记录异常日志便于排查
+
+---
+
+## 5. 后端设计（FastAPI）
+
+### 5.1 API 设计
+
+#### 5.1.1 核心 API：矛盾分析接口
+
+**Endpoint**: `POST /api/analyze-conflict`
+
+**请求 Schema**:
+```json
+{
+  "conversationText": "string (required, 10-5000 字)",
+  "contextDescription": "string (optional, 最多 200 字)",
+  "userId": "string (required, UUID 或 'anonymous')"
+}
+```
+
+**响应 Schema (成功 200)**:
+```json
+{
+  "sessionId": "string (UUID)",
+  "status": "completed",
+  "riskLevel": "LOW | MEDIUM | HIGH | CRITICAL",
+  "analysisResult": {
+    "summary": "string (冲突简短总结，50-100 字)",
+    "timeline": [
+      {
+        "step": 1,
+        "description": "对方提到项链很难解开",
+        "emotion": "紧张",
+        "speaker": "对方"
+      },
+      {
+        "step": 2,
+        "description": "我催促她快一点",
+        "emotion": "不耐烦",
+        "speaker": "我"
+      }
+      // ... more steps
+    ],
+    "emotionAnalysis": {
+      "myEmotions": {
+        "primary": "焦虑",
+        "secondary": ["不耐烦", "委屈"],
+        "explanation": "你在等待过程中产生了时间压力…"
+      },
+      "theirEmotions": {
+        "primary": "受伤",
+        "secondary": ["愤怒", "委屈"],
+        "explanation": "对方感到被催促时不被理解…"
+      }
+    },
+    "needsAnalysis": {
+      "myNeeds": ["效率", "被理解"],
+      "theirNeeds": ["耐心", "不被指责"],
+      "conflictCore": "双方对'时间压力'的感知差异"
+    },
+    "advice": [
+      {
+        "type": "gentle",
+        "title": "温和道歉版",
+        "message": "宝贝，对不起，我刚才催你是因为…（完整消息）",
+        "explanation": "承认自己的焦虑，表达理解"
+      },
+      {
+        "type": "explanatory",
+        "title": "解释版",
+        "message": "我想解释一下刚才为什么那样说…",
+        "explanation": "澄清意图，避免误解"
+      }
+    ],
+    "riskHints": [] // 如果有风险，包含提示文本和资源链接
+  },
+  "createdAt": "ISO 8601 timestamp"
+}
+```
+
+**响应 Schema (处理中 202)**:
+```json
+{
+  "sessionId": "string",
+  "status": "processing",
+  "message": "分析正在进行中，请稍候…"
+}
+```
+> 说明：MVP 阶段采用同步处理，直接返回 200；未来可改为异步（返回 202，前端轮询）
+
+**响应 Schema (错误 4xx/5xx)**:
+```json
+{
+  "error": {
+    "code": "INVALID_INPUT | LLM_ERROR | TIMEOUT | INTERNAL_ERROR",
+    "message": "具体错误描述",
+    "details": {}
+  }
+}
+```
+
+#### 5.1.2 认证相关 API
+
+**Endpoint**: `POST /api/auth/send-code`
+- 发送邮箱验证码
+- 请求：`{ "email": "user@example.com" }`
+- 响应：`{ "message": "验证码已发送" }`
+
+**Endpoint**: `POST /api/auth/verify-code`
+- 验证验证码并登录/注册
+- 请求：`{ "email": "...", "code": "123456" }`
+- 响应：`{ "accessToken": "JWT token", "userId": "UUID", "isNewUser": true }`
+
+**Endpoint**: `GET /api/auth/me`
+- 获取当前用户信息（需 Authorization header）
+- 响应：`{ "userId": "...", "email": "...", "createdAt": "..." }`
+
+#### 5.1.3 历史记录 API（P1 可选）
+
+**Endpoint**: `GET /api/sessions?userId={userId}&limit=20&offset=0`
+- 获取用户历史分析列表
+- 响应：
+```json
+{
+  "sessions": [
+    {
+      "sessionId": "...",
+      "summary": "关于项链的争吵",
+      "riskLevel": "LOW",
+      "createdAt": "...",
+      "status": "completed"
+    }
+  ],
+  "total": 42
+}
+```
+
+**Endpoint**: `GET /api/sessions/{sessionId}`
+- 获取单次分析详情
+- 响应：同 `POST /analyze-conflict` 的 200 响应
+
+### 5.2 服务分层架构
+
+#### 5.2.1 目录结构
+
+```
+backend/
+├── app/
+│   ├── main.py                    # FastAPI 应用入口
+│   ├── api/
+│   │   └── routes/
+│   │       ├── auth.py            # 认证路由
+│   │       └── analyze.py         # 分析路由
+│   ├── services/
+│   │   ├── auth_service.py        # 认证业务逻辑
+│   │   ├── orchestrator.py        # 核心编排服务 ⭐
+│   │   ├── risk_classifier.py     # 风险分类器
+│   │   ├── llm_client.py          # LLM 调用客户端
+│   │   └── response_guard.py      # 安全审查模块
+│   ├── models/
+│   │   ├── user.py                # 用户数据模型
+│   │   └── analysis.py            # 分析会话数据模型
+│   ├── db/
+│   │   └── mongodb.py             # MongoDB 连接与操作
+│   ├── core/
+│   │   ├── config.py              # 配置管理（环境变量）
+│   │   └── security.py            # JWT、加密工具
+│   └── prompts/
+│       ├── standard.py            # 标准模式 Prompt 模板
+│       ├── cautious.py            # 谨慎模式 Prompt 模板
+│       └── high_risk.py           # 高风险安全模式 Prompt 模板
+├── requirements.txt
+├── .env.example
+└── tests/
+    ├── test_orchestrator.py
+    ├── test_risk_classifier.py
+    └── test_response_guard.py
+```
+
+#### 5.2.2 核心模块职责说明
+
+**1. API 层 (app/api/routes/)**
+
+职责：
+- 接收 HTTP 请求，参数验证（使用 Pydantic）
+- 调用 Service 层处理业务逻辑
+- 返回标准化 JSON 响应
+- 处理认证中间件（JWT 验证）
+
+**2. Orchestrator 编排服务 (app/services/orchestrator.py)**
+
+职责：**最核心模块**，编排整个分析流程
+
+核心方法：
+```python
+class AnalysisOrchestrator:
+    async def analyze(
+        self, 
+        conversation_text: str, 
+        context_description: str,
+        user_id: str
+    ) -> AnalysisResult:
+        """
+        主流程编排：
+        1. 创建 session 记录（status: processing）
+        2. 调用 RiskClassifier.classify()
+        3. 根据 risk_level 选择 Prompt 模板
+        4. 调用 LLMClient.generate()
+        5. 调用 ResponseGuard.validate()
+        6. 如不通过，尝试 Self-Refine 或降级
+        7. 更新 session (status: completed)
+        8. 返回结果
+        """
+```
+
+关键逻辑：
+- 错误处理：每一步都要 try-catch，记录日志
+- 超时控制：整个流程最长 60 秒，超时返回降级响应
+- 幂等性：通过 sessionId 确保重复请求不会重复处理
+
+**3. RiskClassifier 风险分类器 (app/services/risk_classifier.py)**
+
+职责：判断输入文本的风险等级和风险标签
+
+核心方法：
+```python
+class RiskClassifier:
+    def classify(self, text: str) -> RiskClassification:
+        """
+        返回：
+        {
+            "risk_level": "LOW|MEDIUM|HIGH|CRITICAL",
+            "tags": ["self_harm", "violence", ...],
+            "confidence": 0.85
+        }
+        """
+```
+
+MVP 实现策略（规则 + 小模型混合）：
+
+**第一层：关键词规则匹配**（快速过滤）
+- CRITICAL 触发词：
+  - 自残类："自杀"、"不想活了"、"结束生命"、"自残"
+  - 他伤类："杀了你"、"弄死"、"报复"、"伤害"
+  - 严重暴力："殴打"、"家暴"、"虐待"
+- HIGH 触发词：
+  - "威胁"、"报警"、"分手"、"离婚"（高情绪强度）
+- MEDIUM 触发词：
+  - "讨厌"、"恨"、"受够了"
+
+**第二层：情绪强度评分**（可选，MVP 可省略）
+- 使用轻量级 Sentiment Model（如 DistilBERT-based）
+- 计算负面情绪得分，超过阈值升级 risk_level
+
+**输出示例**：
+```python
+# 低风险
+RiskClassification(risk_level="LOW", tags=[], confidence=0.9)
+
+# 高风险
+RiskClassification(
+    risk_level="CRITICAL", 
+    tags=["self_harm", "explicit_suicide_mention"],
+    confidence=0.95
+)
+```
+
+**4. LLMClient 大模型调用客户端 (app/services/llm_client.py)**
+
+职责：封装对外部 LLM API 的调用（OpenAI / 其他兼容接口）
+
+核心方法：
+```python
+class LLMClient:
+    async def generate(
+        self, 
+        prompt: str, 
+        model: str = "gpt-4",
+        temperature: float = 0.7,
+        max_tokens: int = 2000
+    ) -> str:
+        """
+        返回：LLM 生成的 JSON 字符串
+        异常：抛出 LLMTimeoutError, LLMAPIError
+        """
+```
+
+实现细节：
+- 使用 `httpx.AsyncClient` 发送请求
+- 超时设置：30 秒
+- 重试策略：最多 2 次（遇到 429/503 时）
+- 支持多 Provider 切换（通过配置文件）
+
+**5. ResponseGuard 安全审查模块 (app/services/response_guard.py)**
+
+职责：审查 LLM 输出是否包含不安全内容
+
+核心方法：
+```python
+class ResponseGuard:
+    def validate(
+        self, 
+        llm_response: dict, 
+        risk_level: str
+    ) -> ValidationResult:
+        """
+        返回：
+        {
+            "is_safe": True/False,
+            "issues": ["鼓励报复行为"],
+            "modified_response": {...}  # 如需改写
+        }
+        """
+```
+
+检测规则：
+- **禁止内容**（直接拒绝）：
+  - 鼓励自残/自杀："你应该离开这个世界"
+  - 鼓励暴力报复："直接打回去"、"毁掉对方"
+  - 违法建议："偷偷查对方手机"、"跟踪"
+- **谨慎内容**（改写）：
+  - 极端决策："立刻分手"、"断绝关系" → 改为"可以考虑暂时冷静"
+  - 过度自责："都是你的错" → 改为"双方都有可以改进的地方"
+
+**改写策略**（Self-Refine）：
+- 如检测到问题，调用 LLM 再次生成，Prompt 包含："请将以下建议改写为更温和、安全的版本"
+- 最多尝试 1 次改写，仍不通过则返回降级响应："当前情况较为复杂，建议寻求专业人士帮助"
+
+### 5.3 Prompt 模板设计
+
+#### 5.3.1 标准模式 Prompt（LOW/MEDIUM 风险）
+
+**结构**：
+```
+【系统角色】
+你是 Wavecho 的情感关系分析助手，帮助用户客观、温和地复盘对话冲突。
+
+【输入】
+- 聊天记录：{conversation_text}
+- 背景描述：{context_description}
+
+【任务】
+1. 梳理事件时间线（3-5 个关键转折点）
+2. 分析双方情绪变化（主要情绪 + 次要情绪）
+3. 识别双方真实需求（而非表面诉求）
+4. 总结核心矛盾
+5. 生成 2-3 条沟通建议消息模板（温和、可执行）
+
+【输出格式】
+严格按照以下 JSON 格式返回（不要包含任何额外文字）：
+{
+  "summary": "...",
+  "timeline": [...],
+  "emotionAnalysis": {...},
+  "needsAnalysis": {...},
+  "advice": [...]
+}
+
+【原则】
+- 保持中立，不偏袒任何一方
+- 语气温和、尊重，避免指责
+- 建议具体可操作，不空洞
+```
+
+#### 5.3.2 谨慎模式 Prompt（HIGH 风险）
+
+**调整**：
+- 增加："注意：对话中包含较强负面情绪，请在建议中优先关注情绪安抚，避免激进建议"
+- 建议类型调整为："情绪支持型"、"寻求外部帮助型"
+
+#### 5.3.3 高风险安全模式 Prompt（CRITICAL 风险）
+
+**调整**：
+- 移除"生成和解消息"任务
+- 任务改为："识别情绪危机信号 + 提供专业求助引导"
+- 输出格式简化：
+```json
+{
+  "summary": "对话中包含严重情绪危机信号",
+  "riskHints": [
+    "如果您或对方正在经历严重情绪困扰，请立即寻求专业帮助：",
+    "心理援助热线：...",
+    "紧急情况请拨打 110 或联系家人朋友"
+  ],
+  "advice": []  // 不提供具体建议
+}
+```
+
+### 5.4 数据加密与隐私保护
+
+#### 5.4.1 敏感字段加密
+
+**需加密字段**：
+- `conversationText`（原始聊天记录）
+- `contextDescription`（背景描述）
+
+**加密方案**：
+- 使用 AES-256-GCM 对称加密
+- 密钥管理：存储在环境变量 `ENCRYPTION_KEY`（32 字节随机密钥）
+- 加密后存储为 Base64 字符串
+
+**实现位置**：
+- `app/core/security.py` 提供 `encrypt()` 和 `decrypt()` 函数
+- 在 `Orchestrator` 写入数据库前加密，读取时解密
+
+#### 5.4.2 日志脱敏
+
+**规则**：
+- ✅ 可记录：`sessionId`, `userId`, `riskLevel`, `status`, 时间戳
+- ❌ 不可记录：`conversationText`, `contextDescription`, 分析结果中的具体文本
+
+**示例**：
+```python
+# ✅ 正确
+logger.info(f"Session {session_id} analysis completed, risk={risk_level}")
+
+# ❌ 错误
+logger.info(f"User input: {conversation_text}")
+```
+
+---
+
+## 6. 数据模型与存储设计
+
+### 6.1 数据库选型：MongoDB
+
+**理由概述**（见第 3 章详细说明）：
+- 非结构化文本存储更自然
+- 分析结果 JSON 灵活扩展
+- 单文档操作为主，无复杂 JOIN
+- 易于横向扩展
+
+### 6.2 Collection 设计
+
+#### 6.2.1 users 集合（用户信息）
+
+**Schema**:
+```javascript
+{
+  _id: ObjectId,
+  userId: String (UUID, unique, indexed),
+  email: String (unique, indexed),
+  emailVerified: Boolean,
+  isAnonymous: Boolean,
+  passwordHash: String (如果支持密码登录，MVP 可省略),
+  createdAt: ISODate,
+  updatedAt: ISODate,
+  lastLoginAt: ISODate,
+  metadata: {
+    appVersion: String,
+    platform: "iOS | Android"
+  }
+}
+```
+
+**索引**:
+```javascript
+db.users.createIndex({ userId: 1 }, { unique: true })
+db.users.createIndex({ email: 1 }, { unique: true, sparse: true })
+db.users.createIndex({ createdAt: -1 })
+```
+
+**字段说明**:
+- `isAnonymous`: true 表示匿名用户（UUID 作为 userId，无 email）
+- `email`: 仅在邮箱登录时存在
+- `passwordHash`: MVP 阶段使用验证码登录，可暂不存储密码
+
+#### 6.2.2 analysis_sessions 集合（分析会话）
+
+**Schema**:
+```javascript
+{
+  _id: ObjectId,
+  sessionId: String (UUID, unique, indexed),
+  userId: String (indexed),
+  status: String ("processing" | "completed" | "failed"),
+  
+  // 输入数据（加密存储）
+  input: {
+    conversationTextEncrypted: String (Base64),
+    contextDescriptionEncrypted: String (Base64),
+    originalLength: Number (原始文本长度，用于统计)
+  },
+  
+  // 风险分类结果
+  riskClassification: {
+    riskLevel: String ("LOW" | "MEDIUM" | "HIGH" | "CRITICAL"),
+    tags: [String],
+    confidence: Number
+  },
+  
+  // 分析结果（不加密，但脱敏）
+  analysisResult: {
+    summary: String,
+    timeline: [
+      {
+        step: Number,
+        description: String,
+        emotion: String,
+        speaker: String ("我" | "对方")
+      }
+    ],
+    emotionAnalysis: {
+      myEmotions: {
+        primary: String,
+        secondary: [String],
+        explanation: String
+      },
+      theirEmotions: {
+        primary: String,
+        secondary: [String],
+        explanation: String
+      }
+    },
+    needsAnalysis: {
+      myNeeds: [String],
+      theirNeeds: [String],
+      conflictCore: String
+    },
+    advice: [
+      {
+        type: String ("gentle" | "explanatory" | "humorous"),
+        title: String,
+        message: String,
+        explanation: String
+      }
+    ],
+    riskHints: [String]
+  },
+  
+  // 元数据
+  llmMetadata: {
+    model: String ("gpt-4", "gpt-3.5-turbo"),
+    promptTokens: Number,
+    completionTokens: Number,
+    latencyMs: Number
+  },
+  
+  createdAt: ISODate,
+  completedAt: ISODate,
+  errorMessage: String (仅 status=failed 时存在)
+}
+```
+
+**索引**:
+```javascript
+db.analysis_sessions.createIndex({ sessionId: 1 }, { unique: true })
+db.analysis_sessions.createIndex({ userId: 1, createdAt: -1 })
+db.analysis_sessions.createIndex({ status: 1 })
+db.analysis_sessions.createIndex({ "riskClassification.riskLevel": 1 })
+```
+
+**字段说明**:
+- `input.conversationTextEncrypted`: 加密后的聊天记录（AES-256-GCM）
+- `analysisResult`: LLM 返回的结构化结果，不加密但不包含原始对话
+- `llmMetadata`: 用于成本统计和性能监控
+- TTL 策略（可选）：90 天后自动删除（隐私保护）
+
+#### 6.2.3 verification_codes 集合（验证码，MVP 必需）
+
+**Schema**:
+```javascript
+{
+  _id: ObjectId,
+  email: String (indexed),
+  code: String (6 位数字),
+  expiresAt: ISODate,
+  used: Boolean,
+  createdAt: ISODate
+}
+```
+
+**索引**:
+```javascript
+db.verification_codes.createIndex({ email: 1, createdAt: -1 })
+db.verification_codes.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+```
+
+**TTL 策略**:
+- 自动过期：5 分钟后自动删除（MongoDB TTL Index）
+
+#### 6.2.4 audit_logs 集合（审计日志，P1 可选）
+
+**Schema**:
+```javascript
+{
+  _id: ObjectId,
+  sessionId: String (indexed),
+  userId: String (indexed),
+  eventType: String ("analyze_started" | "risk_detected" | "analysis_completed" | "guard_rejected"),
+  riskLevel: String,
+  guardIssues: [String],  // 如果安全审查失败，记录原因
+  timestamp: ISODate
+}
+```
+
+**用途**：
+- 监控高风险会话频率
+- 分析 ResponseGuard 拦截效果
+- 合规审计（如需要）
+
+### 6.3 敏感数据处理策略
+
+#### 6.3.1 加密存储
+
+**加密字段**：
+- `conversationTextEncrypted`
+- `contextDescriptionEncrypted`
+
+**加密流程**：
+1. Orchestrator 接收原始文本
+2. 调用 `security.encrypt(text, key=ENCRYPTION_KEY)`
+3. 返回 Base64 编码的密文
+4. 存储到 MongoDB
+
+**解密流程**（仅在需要时，MVP 阶段不需要）：
+1. 从 MongoDB 读取密文
+2. 调用 `security.decrypt(ciphertext, key=ENCRYPTION_KEY)`
+3. 返回明文
+
+**密钥管理**：
+- 存储在环境变量 `.env` 中
+- 密钥轮换策略：V2 功能（使用密钥版本号字段）
+
+#### 6.3.2 数据脱敏
+
+**分析结果脱敏原则**：
+- ✅ 保留：情绪词、需求词、时间线描述（抽象化）
+- ❌ 移除：具体对话原文、人名、地点、敏感细节
+
+**LLM Prompt 中要求**：
+- "在时间线和建议中，不要直接引用原文，而是用抽象描述"
+- 示例：
+  - ❌ "对方说：'你就是个混蛋'"
+  - ✅ "对方使用了激烈的指责性语言"
+
+#### 6.3.3 用户数据删除
+
+**用户请求删除账号时**（V2 功能，MVP 设计预留）：
+1. 删除 `users` 集合中的记录
+2. 删除 `analysis_sessions` 中该 userId 的所有记录
+3. 删除 `verification_codes` 中的验证码记录
+4. 记录删除操作到 `audit_logs`
+
+**硬删除 vs 软删除**：
+- MVP 采用**硬删除**（直接 `deleteMany()`）
+- V2 可改为软删除（增加 `deleted: true` 字段，保留 30 天后物理删除）
+
+### 6.4 数据库连接与操作封装
+
+**连接管理** (`app/db/mongodb.py`):
+```python
+# 伪代码示例结构
+from motor.motor_asyncio import AsyncIOMotorClient
+
+class MongoDB:
+    client: AsyncIOMotorClient = None
+    db = None
+    
+    @classmethod
+    async def connect(cls):
+        cls.client = AsyncIOMotorClient(MONGO_URI)
+        cls.db = cls.client[DB_NAME]
+    
+    @classmethod
+    async def close(cls):
+        cls.client.close()
+    
+    @classmethod
+    def get_collection(cls, name: str):
+        return cls.db[name]
+```
+
+**CRUD 操作封装**（Repository 模式）:
+- `UserRepository`: 用户增删改查
+- `AnalysisRepository`: 会话增删改查
+- 提供类型安全的方法，避免直接操作原生 MongoDB API
+
+---
+
+## 7. 大模型交互设计
+
+### 7.1 LLM Provider 选型
+
+**MVP 阶段推荐**：
+- **主选方案**：OpenAI GPT-4 Turbo（`gpt-4-turbo-preview`）
+  - 理由：理解力强，结构化输出稳定，JSON 格式准确率高
+  - 成本：约 $0.01/次分析（预估 1500 tokens）
+- **备选方案**：GPT-3.5 Turbo（降级方案，成本低但质量略差）
+
+**V2 扩展**：
+- 支持国内大模型（智谱 GLM-4、通义千问、文心一言等）
+- 通过配置文件切换 Provider
+
+### 7.2 Prompt 工程设计
+
+#### 7.2.1 Prompt 结构规范
+
+**通用结构**（分为 4 个部分）：
+
+```
+# Part 1: System Role（系统角色）
+定义 AI 的身份、能力边界、语气风格
+
+# Part 2: Task Description（任务描述）
+明确具体要做什么，包含输入格式说明
+
+# Part 3: Output Format（输出格式）
+严格定义 JSON Schema，包含示例
+
+# Part 4: Principles & Constraints（原则与约束）
+安全规则、禁止事项、语气要求
+```
+
+#### 7.2.2 标准模式 Prompt 详细版
+
+**完整 Prompt 模板** (`app/prompts/standard.py`):
+
+```python
+STANDARD_PROMPT_TEMPLATE = """
+# Part 1: 系统角色
+你是 Wavecho 的情感关系分析助手。你的任务是以第三方视角，客观、温和地帮助用户复盘对话冲突，理解双方情绪与需求，提供建设性的沟通建议。
+
+你不是心理咨询师，不提供心理诊断。你是一个"沟通翻译官"和"冷静剂"。
+
+# Part 2: 任务描述
+用户提供了一段发生冲突的聊天记录和背景描述（如果有）。你需要：
+
+1. **梳理事件时间线**：提炼 3-5 个关键转折点，说明冲突如何逐步升级
+2. **分析双方情绪**：识别"我"（用户）和"对方"的主要情绪和次要情绪
+3. **识别真实需求**：挖掘表面诉求背后的深层需求（如"被理解""安全感""尊重"）
+4. **总结核心矛盾**：用一句话概括冲突的根本原因
+5. **生成沟通建议**：提供 2-3 条具体可发送的消息模板，帮助用户和解
+
+## 输入内容
+【聊天记录】
+{conversation_text}
+
+【背景描述】
+{context_description}
+
+# Part 3: 输出格式
+严格按照以下 JSON 格式返回，不要包含任何代码块标记或额外文字：
+
+{{
+  "summary": "string (50-100 字，简短总结冲突)",
+  "timeline": [
+    {{
+      "step": 1,
+      "description": "string (这一步发生了什么)",
+      "emotion": "string (主导情绪)",
+      "speaker": "我" | "对方"
+    }}
+  ],
+  "emotionAnalysis": {{
+    "myEmotions": {{
+      "primary": "string (主要情绪，如'焦虑')",
+      "secondary": ["string"],
+      "explanation": "string (为什么会有这种情绪)"
+    }},
+    "theirEmotions": {{
+      "primary": "string",
+      "secondary": ["string"],
+      "explanation": "string"
+    }}
+  }},
+  "needsAnalysis": {{
+    "myNeeds": ["string"],
+    "theirNeeds": ["string"],
+    "conflictCore": "string (核心矛盾)"
+  }},
+  "advice": [
+    {{
+      "type": "gentle",
+      "title": "温和道歉版",
+      "message": "string (完整的消息文本，50-150 字)",
+      "explanation": "string (为什么这样说有效)"
+    }},
+    {{
+      "type": "explanatory",
+      "title": "解释版",
+      "message": "string",
+      "explanation": "string"
+    }}
+  ]
+}}
+
+# Part 4: 原则与约束
+1. **保持中立**：不偏袒任何一方，不做道德评判
+2. **语气温和**：避免"你错了""对方不对"等指责性表述
+3. **具体可操作**：建议消息要完整、自然，可以直接复制发送
+4. **尊重隐私**：不在输出中泄露具体姓名、地点等敏感信息
+5. **避免极端建议**：不建议"立刻分手""断绝关系"等不可逆决策
+6. **安全第一**：如果对话涉及暴力、自残，优先关注情绪安抚
+"""
+```
+
+**Prompt 变量替换**：
+```python
+prompt = STANDARD_PROMPT_TEMPLATE.format(
+    conversation_text=user_input.conversation_text,
+    context_description=user_input.context_description or "无"
+)
+```
+
+#### 7.2.3 高风险安全模式 Prompt
+
+**关键调整**：
+- 移除"生成和解消息"任务
+- 增加"识别危机信号"任务
+- 输出简化为风险提示 + 求助引导
+
+**Prompt 片段** (`app/prompts/high_risk.py`):
+```python
+HIGH_RISK_PROMPT_TEMPLATE = """
+# 注意：输入文本包含严重情绪危机信号
+
+你的任务变更为：
+1. 识别具体的危机信号（自残、自杀、严重暴力倾向）
+2. 提供情绪支持性的简短总结
+3. **不生成和解消息**，而是引导用户寻求专业帮助
+
+输出格式：
+{{
+  "summary": "对话中包含严重情绪困扰信号，建议寻求专业支持",
+  "riskHints": [
+    "如果您或对方正在经历严重的情绪危机，请考虑：",
+    "• 心理援助热线：Beijing Suicide Research and Prevention Center 010-82951332",
+    "• 紧急情况请拨打 110 或联系信任的家人朋友",
+    "• 寻找专业心理咨询师（推荐平台：简单心理、壹心理）"
+  ],
+  "advice": []
+}}
+
+原则：
+- 不鼓励任何自残/自杀行为
+- 不提供"如何和解"的具体建议（可能加剧心理负担）
+- 语气关怀但不侵入
+"""
+```
+
+### 7.3 LLM 调用参数配置
+
+**推荐参数**（针对 OpenAI API）:
+
+| 参数 | 值 | 理由 |
+|------|-----|------|
+| `model` | `gpt-4-turbo-preview` | 平衡性能与成本 |
+| `temperature` | `0.7` | 适度创造性，但不过度发散 |
+| `max_tokens` | `2000` | 足够输出完整 JSON，避免截断 |
+| `top_p` | `0.9` | 保持输出稳定性 |
+| `response_format` | `{"type": "json_object"}` | 强制 JSON 输出（GPT-4 Turbo 支持） |
+
+**请求示例**（伪代码）:
+```python
+async def generate(self, prompt: str) -> str:
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+            json={
+                "model": "gpt-4-turbo-preview",
+                "messages": [
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 2000,
+                "response_format": {"type": "json_object"}
+            }
+        )
+        result = response.json()
+        return result["choices"][0]["message"]["content"]
+```
+
+### 7.4 超时与重试策略
+
+#### 7.4.1 超时设置
+
+| 阶段 | 超时时间 | 处理 |
+|------|---------|------|
+| **单次 LLM 请求** | 30 秒 | 抛出 `LLMTimeoutError` |
+| **整个分析流程** | 60 秒 | 返回降级响应 |
+
+#### 7.4.2 重试策略
+
+**触发重试的错误码**：
+- `429`：Rate Limit（等待 2 秒后重试）
+- `503`：Service Unavailable（等待 5 秒后重试）
+- 网络超时（立即重试 1 次）
+
+**不重试的错误码**：
+- `400`：Bad Request（Prompt 格式错误，记录日志）
+- `401`：Unauthorized（API Key 错误，立即失败）
+- `500`：Internal Server Error（LLM 服务端错误，记录后降级）
+
+**重试次数**：最多 2 次（共 3 次尝试）
+
+**实现方式**（使用 `tenacity` 库）:
+```python
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_fixed(2),
+    retry=retry_if_exception_type((httpx.TimeoutException, RateLimitError))
+)
+async def generate_with_retry(self, prompt: str) -> str:
+    return await self._generate(prompt)
+```
+
+### 7.5 LLM 输出解析与容错
+
+#### 7.5.1 JSON 解析
+
+**步骤**：
+1. 去除可能的 Markdown 代码块标记（```json ... ```）
+2. 使用 `json.loads()` 解析
+3. 验证必需字段是否存在
+
+**容错处理**：
+- 如果缺少某些字段（如 `advice`），填充默认值
+- 如果整体格式错误，记录原始输出并返回降级响应
+
+**示例代码**（伪代码）:
+```python
+def parse_llm_response(raw_text: str) -> dict:
+    # 去除代码块标记
+    text = raw_text.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    if text.endswith("```"):
+        text = text[:-3]
+    
+    # 解析 JSON
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        logger.error(f"LLM output JSON parse failed: {e}, raw: {raw_text[:200]}")
+        raise LLMOutputError("Invalid JSON format")
+    
+    # 验证必需字段
+    required_fields = ["summary", "timeline", "emotionAnalysis", "needsAnalysis", "advice"]
+    for field in required_fields:
+        if field not in data:
+            logger.warning(f"Missing field: {field}")
+            data[field] = get_default_value(field)
+    
+    return data
+```
+
+#### 7.5.2 降级响应策略
+
+**触发条件**：
+- LLM 超时 3 次仍失败
+- LLM 返回无法解析的输出
+- ResponseGuard 多次拦截后仍不安全
+
+**降级响应内容**：
+```json
+{
+  "summary": "抱歉，当前分析遇到技术问题，请稍后重试",
+  "timeline": [],
+  "emotionAnalysis": {
+    "myEmotions": { "primary": "复杂情绪", "secondary": [], "explanation": "系统暂时无法分析" },
+    "theirEmotions": { "primary": "复杂情绪", "secondary": [], "explanation": "系统暂时无法分析" }
+  },
+  "needsAnalysis": {
+    "myNeeds": [],
+    "theirNeeds": [],
+    "conflictCore": "暂时无法识别"
+  },
+  "advice": [
+    {
+      "type": "fallback",
+      "title": "建议",
+      "message": "当前情况较为复杂，建议您冷静思考后，选择合适的时机与对方沟通。如有需要，可以寻求专业人士帮助。",
+      "explanation": ""
+    }
+  ]
+}
+```
+
+### 7.6 成本控制与监控
+
+#### 7.6.1 Token 计数与预估
+
+**Token 预估**（针对 GPT-4）:
+- 输入 Prompt：~800 tokens（模板） + 用户输入长度
+- 输出：~700 tokens（结构化 JSON）
+- 单次分析总计：~1500 tokens
+- 成本：$0.01/次（GPT-4 Turbo 价格：$0.01/1K tokens 输入 + $0.03/1K tokens 输出）
+
+**每日成本预估**：
+- 100 次分析/天：$1
+- 1000 次分析/天：$10
+
+#### 7.6.2 监控指标
+
+**记录到 `llmMetadata` 字段**：
+- `model`: 使用的模型名称
+- `promptTokens`: 输入 Token 数
+- `completionTokens`: 输出 Token 数
+- `latencyMs`: 请求耗时（毫秒）
+
+**定期统计**（可通过 MongoDB Aggregation）：
+- 每日总 Token 消耗
+- 平均延迟
+- 失败率（重试次数 / 总次数）
+
+---
+
+## 8. 安全与隐私设计
+
+### 8.1 安全架构概览
+
+**三层防护体系**：
+
+```
+                  用户输入
+                     ↓
+        ┌────────────────────────┐
+        │  Layer 1: RiskClassifier │  ← 输入风险检测
+        │  (风险分类器)              │
+        └────────────────────────┘
+                     ↓
+           根据风险等级选择 Prompt
+                     ↓
+        ┌────────────────────────┐
+        │  Layer 2: LLM Generation │
+        │  (大模型生成)              │
+        └────────────────────────┘
+                     ↓
+        ┌────────────────────────┐
+        │  Layer 3: ResponseGuard │  ← 输出安全审查
+        │  (回答安全审查)            │
+        └────────────────────────┘
+                     ↓
+              安全输出返回用户
+```
+
+### 8.2 Layer 1: RiskClassifier 详细设计
+
+#### 8.2.1 风险等级定义
+
+| 等级 | 标识 | 定义 | 处理策略 |
+|------|------|------|---------|
+| **LOW** | 低风险 | 日常矛盾，情绪强度低 | 标准模式分析，正常输出 |
+| **MEDIUM** | 中风险 | 较强负面情绪（愤怒、失望），但无极端表述 | 标准模式 + 额外情绪关注提示 |
+| **HIGH** | 高风险 | 包含极端情绪表达、分手/离婚威胁、但无明确自残/他伤 | 谨慎模式，建议偏保守，增加"冷静期"提示 |
+| **CRITICAL** | 危机级 | 明确的自残、自杀、他伤、严重暴力表述 | 高风险安全模式，不提供和解建议，仅输出求助引导 |
+
+#### 8.2.2 风险标签体系
+
+**标签分类**（可组合）：
+
+| 标签 | 定义 | 示例关键词 |
+|------|------|----------|
+| `self_harm` | 自残倾向 | "自残"、"割腕"、"伤害自己" |
+| `suicide` | 自杀倾向 | "自杀"、"不想活"、"结束生命"、"去死" |
+| `violence_threat` | 暴力威胁 | "杀了你"、"弄死"、"打死" |
+| `domestic_violence` | 家暴相关 | "打我"、"家暴"、"动手" |
+| `extreme_emotion` | 极端情绪 | "恨死你"、"永远不原谅" |
+| `breakup_threat` | 分手/离婚威胁 | "分手吧"、"离婚"、"再也不见" |
+
+**组合示例**：
+- `tags: ["self_harm", "suicide"]` → `riskLevel: CRITICAL`
+- `tags: ["breakup_threat"]` → `riskLevel: HIGH`
+- `tags: []` → `riskLevel: LOW`
+
+#### 8.2.3 检测规则（MVP 实现）
+
+**第一阶段：关键词匹配（规则引擎）**
+
+**CRITICAL 触发规则**（优先级最高）：
+```python
+CRITICAL_KEYWORDS = {
+    "self_harm": ["自残", "割腕", "自伤", "伤害自己"],
+    "suicide": [
+        "自杀", "不想活了", "活着没意思", "想死", "去死",
+        "结束生命", "了结", "解脱", "一了百了"
+    ],
+    "violence_threat": [
+        "杀了你", "弄死", "宰了", "要你命",
+        "杀掉", "打死你", "灭了你"
+    ],
+    "domestic_violence": ["家暴", "打我", "动手打", "暴力"]
+}
+
+def check_critical(text: str) -> tuple[bool, list[str]]:
+    tags = []
+    for category, keywords in CRITICAL_KEYWORDS.items():
+        if any(kw in text for kw in keywords):
+            tags.append(category)
+    return (len(tags) > 0, tags)
+```
+
+**HIGH 触发规则**：
+```python
+HIGH_KEYWORDS = {
+    "breakup_threat": ["分手", "离婚", "断绝关系", "再也不见"],
+    "extreme_emotion": [
+        "恨死", "恨透", "永远不原谅",
+        "受够了", "忍无可忍"
+    ]
+}
+```
+
+**MEDIUM 触发规则**（情绪强度评分）：
+- 负面词汇密度 > 30%（如"讨厌""烦""生气""失望"）
+- 或文本中叹号/问号连续出现 ≥ 3 次
+
+**第二阶段：语义理解（V2 可选）**
+- 使用轻量级情感分析模型（如 DistilBERT）
+- 计算负面情绪得分（0-1），超过 0.8 升级为 MEDIUM
+
+#### 8.2.4 输出示例
+
+**输出结构**：
+```python
+@dataclass
+class RiskClassification:
+    risk_level: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    tags: list[str]
+    confidence: float
+    matched_keywords: list[str]  # 匹配到的具体关键词（用于调试）
+```
+
+**示例 1**（低风险）：
+```python
+RiskClassification(
+    risk_level="LOW",
+    tags=[],
+    confidence=0.95,
+    matched_keywords=[]
+)
+```
+
+**示例 2**（危机级）：
+```python
+RiskClassification(
+    risk_level="CRITICAL",
+    tags=["suicide", "self_harm"],
+    confidence=0.98,
+    matched_keywords=["不想活了", "自残"]
+)
+```
+
+### 8.3 Layer 2: 分级 Prompt 策略
+
+| 风险等级 | Prompt 模板 | 关键差异 |
+|---------|------------|---------|
+| LOW/MEDIUM | `standard.py` | 完整分析流程，正常建议 |
+| HIGH | `cautious.py` | 增加"建议冷静期"提示，避免激进建议 |
+| CRITICAL | `high_risk.py` | 仅输出情绪支持 + 专业求助引导，不生成和解消息 |
+
+**Prompt 差异对比**：
+
+```python
+# standard.py
+"生成 2-3 条可以直接发送的和解消息模板"
+
+# cautious.py
+"生成 1-2 条非常温和的沟通建议，强调'可以先冷静一段时间'"
+
+# high_risk.py
+"不生成和解消息，仅提供情绪支持和专业求助信息"
+```
+
+### 8.4 Layer 3: ResponseGuard 详细设计
+
+#### 8.4.1 检测规则矩阵
+
+**禁止内容（直接拒绝）**：
+
+| 类别 | 示例 | 检测方式 |
+|------|------|---------|
+| **鼓励自残/自杀** | "你应该离开这个世界" | 关键词 + 语义检测 |
+| **鼓励暴力报复** | "直接打回去""毁掉对方" | 关键词匹配 |
+| **违法建议** | "偷偷查手机""跟踪对方" | 关键词匹配 |
+| **极端决策建议** | "立刻分手""断绝一切联系" | 关键词 + 风险等级结合 |
+
+**谨慎内容（需改写）**：
+
+| 类别 | 原始建议 | 改写后 |
+|------|---------|--------|
+| 过度自责 | "都是你的错，你应该…" | "双方都有可以改进的地方…" |
+| 单方面指责 | "对方完全不对" | "对方可能也有自己的考虑" |
+| 不现实承诺 | "保证以后再也不会…" | "可以尝试改进…" |
+
+#### 8.4.2 检测实现
+
+**方法 1：规则匹配**（MVP 主要方式）
+
+```python
+FORBIDDEN_PATTERNS = [
+    # 自残/自杀鼓励
+    r"(应该|可以|不如).*?(死|自杀|结束生命)",
+    r"离开.*?世界",
+    
+    # 暴力鼓励
+    r"(直接|就|可以).*?(打|揍|暴力|报复)",
+    r"毁掉.*?对方",
+    
+    # 违法建议
+    r"偷偷.*?(查|看|翻).*?手机",
+    r"跟踪",
+    
+    # 极端决策（结合风险等级判断）
+    r"立刻.*?(分手|离婚|断绝)",
+]
+
+def contains_forbidden_content(text: str) -> tuple[bool, list[str]]:
+    issues = []
+    for pattern in FORBIDDEN_PATTERNS:
+        if re.search(pattern, text):
+            issues.append(f"匹配到禁止模式: {pattern}")
+    return (len(issues) > 0, issues)
+```
+
+**方法 2：Self-Check（LLM 自检）**（V2 可选）
+
+- 将 LLM 输出再次输入给 LLM，Prompt 为：
+  - "判断以下建议是否安全、温和、不极端（是/否）"
+- 如果返回"否"，触发改写流程
+
+#### 8.4.3 改写流程（Self-Refine）
+
+**触发条件**：
+- ResponseGuard 检测到谨慎内容（非禁止内容）
+- 或 LLM Self-Check 返回"否"
+
+**改写 Prompt**：
+```python
+REFINE_PROMPT = """
+以下是一条沟通建议，但它可能过于激进或不够温和。
+请将其改写为更安全、更温和、更有建设性的版本。
+
+原始建议：
+{original_advice}
+
+改写要求：
+1. 避免极端词汇（如"立刻""永远""绝对"）
+2. 增加缓和语气（如"可以考虑""或许""也许"）
+3. 强调双方沟通而非单方面行动
+
+仅返回改写后的建议文本，不要包含其他内容。
+"""
+```
+
+**最多改写次数**：1 次（避免无限循环）
+
+**改写失败后**：返回降级建议（见 7.5.2）
+
+#### 8.4.4 输出结构
+
+```python
+@dataclass
+class ValidationResult:
+    is_safe: bool
+    issues: list[str]  # 检测到的问题列表
+    modified_response: Optional[dict]  # 如已改写，包含新的响应
+    action: Literal["pass", "refine", "reject"]
+```
+
+**处理流程**：
+```python
+def validate(llm_response: dict, risk_level: str) -> ValidationResult:
+    # 1. 禁止内容检测
+    has_forbidden, issues = contains_forbidden_content(...)
+    if has_forbidden:
+        return ValidationResult(
+            is_safe=False,
+            issues=issues,
+            action="reject"
+        )
+    
+    # 2. 谨慎内容检测（结合风险等级）
+    if risk_level in ["HIGH", "CRITICAL"]:
+        has_extreme, _ = contains_extreme_advice(...)
+        if has_extreme:
+            return ValidationResult(
+                is_safe=False,
+                issues=["包含极端建议"],
+                action="refine"
+            )
+    
+    # 3. 通过
+    return ValidationResult(is_safe=True, issues=[], action="pass")
+```
+
+### 8.5 日志与监控策略
+
+#### 8.5.1 记录内容
+
+**✅ 可记录**（不泄露隐私）：
+- `sessionId`, `userId`, `timestamp`
+- `riskLevel`, `tags`
+- `llmModel`, `promptTokens`, `completionTokens`, `latencyMs`
+- `guardAction`（pass/refine/reject）
+- 错误堆栈（如果失败）
+
+**❌ 不可记录**：
+- 原始聊天记录文本
+- 用户背景描述
+- 分析结果中的具体建议文本（可记录摘要，如"生成 2 条建议"）
+
+#### 8.5.2 异常监控
+
+**需要告警的情况**：
+- CRITICAL 风险等级的会话（每次立即告警）
+- ResponseGuard 拒绝率 > 5%（24 小时内）
+- LLM 超时率 > 10%（1 小时内）
+- 单用户 24 小时内提交 > 50 次（可能是滥用）
+
+**日志示例**：
+```python
+logger.info(
+    "Analysis completed",
+    extra={
+        "session_id": session_id,
+        "user_id": user_id,
+        "risk_level": risk_level,
+        "guard_action": "pass",
+        "latency_ms": 8500
+    }
+)
+
+logger.warning(
+    "High-risk session detected",
+    extra={
+        "session_id": session_id,
+        "risk_level": "CRITICAL",
+        "tags": ["suicide", "self_harm"]
+    }
+)
+```
+
+### 8.6 合规与用户协议
+
+#### 8.6.1 免责声明（UI 展示）
+
+**位置**：AnalyzeInputScreen 底部
+
+**文案**：
+> **使用声明**：Wavecho 是一个基于 AI 的沟通辅助工具，不提供心理咨询或法律建议。分析结果仅供参考，请结合实际情况谨慎判断。如遇紧急情况，请立即寻求专业帮助。
+
+#### 8.6.2 数据处理协议（V2 完善）
+
+**关键条款**：
+- 聊天记录采用端到端加密存储
+- 不会将用户数据用于模型训练或第三方分享
+- 用户可随时请求删除所有数据
+- 90 天后自动删除历史记录（可选）
+
+### 8.7 安全测试策略
+
+#### 8.7.1 单元测试覆盖
+
+**RiskClassifier 测试用例**：
+```python
+def test_risk_classifier_critical():
+    """测试 CRITICAL 级别检测"""
+    text = "我真的不想活了，太痛苦了"
+    result = RiskClassifier().classify(text)
+    assert result.risk_level == "CRITICAL"
+    assert "suicide" in result.tags
+
+def test_risk_classifier_low():
+    """测试 LOW 级别检测"""
+    text = "今天有点不开心，因为项链解不开"
+    result = RiskClassifier().classify(text)
+    assert result.risk_level == "LOW"
+```
+
+**ResponseGuard 测试用例**：
+```python
+def test_response_guard_reject():
+    """测试拒绝禁止内容"""
+    response = {"advice": [{"message": "直接打回去，让对方知道厉害"}]}
+    result = ResponseGuard().validate(response, "MEDIUM")
+    assert result.action == "reject"
+
+def test_response_guard_pass():
+    """测试通过安全内容"""
+    response = {"advice": [{"message": "可以试着温和地表达你的感受"}]}
+    result = ResponseGuard().validate(response, "LOW")
+    assert result.action == "pass"
+```
+
+#### 8.7.2 回放测试（Regression Testing）
+
+**目的**：确保 Prompt 迭代后不会产生新的安全问题
+
+**实现方式**：
+1. 收集 100 个真实/模拟的测试用例（包含各风险等级）
+2. 每次更新 Prompt 后，跑一遍所有用例
+3. 对比输出差异，检查是否有新的不安全内容
+
+**测试用例示例**：
+```json
+{
+  "test_cases": [
+    {
+      "id": "case_001",
+      "input": "...",
+      "expected_risk_level": "CRITICAL",
+      "expected_guard_action": "reject"
+    }
+  ]
+}
+```
+
+---
+
+## 9. 开发阶段划分 & 任务拆解
+
+### 9.1 整体开发路线图
+
+**总耗时预估**：约 4-6 周（1 位全栈工程师）
+
+```
+Phase 1: 后端基础搭建（Week 1）
+    ↓
+Phase 2: 核心分析流程实现（Week 2）
+    ↓
+Phase 3: 前端页面与交互（Week 2-3）
+    ↓
+Phase 4: 联调与安全加固（Week 3-4）
+    ↓
+Phase 5: 测试与打磨（Week 4）
+    ↓
+MVP Release（Week 4-5）
+```
+
+---
+
+### 9.2 Phase 1: 后端基础搭建（Week 1）
+
+**目标**：搭建 FastAPI 项目框架，完成数据库连接，实现 Mock 版分析接口
+
+#### 任务清单
+
+**Task 1.1: 项目初始化与依赖管理**
+- [ ] 在 `backend/` 目录使用 `uv` 初始化 Python 项目：
+  ```bash
+  cd backend
+  uv init
+  ```
+- [ ] 使用 `uv` 添加核心依赖：
+  ```bash
+  uv add fastapi uvicorn[standard] motor pydantic pydantic-settings httpx python-jose[cryptography] passlib[bcrypt] python-dotenv tenacity
+  ```
+- [ ] 创建 `backend/` 目录结构（参考 5.2.1）
+- [ ] 创建 `.env.example` 和 `.env`（包含 MONGO_URI、OPENAI_API_KEY、JWT_SECRET 等）
+- [ ] 编写 `app/main.py`（FastAPI 应用入口，CORS 配置，**确保 Swagger 文档可访问**）
+
+**Task 1.2: 数据库 Docker 部署**
+- [ ] 在项目根目录编写 `docker-compose.yml`：
+  ```yaml
+  version: '3.8'
+  services:
+    mongodb:
+      image: mongo:7.0
+      container_name: wavecho-mongodb
+      ports:
+        - "27017:27017"
+      environment:
+        MONGO_INITDB_ROOT_USERNAME: wavecho
+        MONGO_INITDB_ROOT_PASSWORD: wavecho_dev_password
+      volumes:
+        - mongodb_data:/data/db
+      networks:
+        - wavecho-network
+  
+  volumes:
+    mongodb_data:
+  
+  networks:
+    wavecho-network:
+      driver: bridge
+  ```
+- [ ] 启动 MongoDB：`docker-compose up -d`
+- [ ] 验证数据库连接：`docker exec -it wavecho-mongodb mongosh`
+
+**Task 1.3: npm 统一命令管理**
+- [ ] 在项目根目录创建 `package.json`：
+  ```json
+  {
+    "name": "wavecho",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+      "db:start": "docker-compose up -d",
+      "db:stop": "docker-compose down",
+      "db:reset": "docker-compose down -v && docker-compose up -d",
+      "backend:dev": "cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+      "backend:install": "cd backend && uv sync",
+      "frontend:dev": "cd frontend && expo start",
+      "frontend:install": "cd frontend && npm install",
+      "dev": "concurrently \"npm run db:start\" \"npm run backend:dev\"",
+      "install:all": "npm run backend:install && npm run frontend:install",
+      "test:backend": "cd backend && uv run pytest",
+      "docs": "echo 'Swagger Docs: http://localhost:8000/docs'"
+    },
+    "devDependencies": {
+      "concurrently": "^8.2.2"
+    }
+  }
+  ```
+- [ ] 安装 npm 依赖：`npm install`
+- [ ] 验证命令可用：`npm run dev`
+
+**Task 1.4: 数据库连接与初始化**
+- [ ] 实现 `app/db/mongodb.py`（MongoDB 连接管理）
+- [ ] 在 `.env` 中配置 MongoDB URI：
+  ```
+  MONGO_URI=mongodb://wavecho:wavecho_dev_password@localhost:27017/
+  MONGO_DB_NAME=wavecho_dev
+  ```
+- [ ] 在 `app/main.py` 中添加启动事件，自动创建索引
+- [ ] 创建 `users` 和 `analysis_sessions` 集合（通过首次写入自动创建）
+- [ ] 创建必要的索引（参考 6.2）
+
+**Task 1.5: 数据模型定义**
+- [ ] 实现 `app/models/user.py`（User Pydantic 模型）
+- [ ] 实现 `app/models/analysis.py`（AnalysisSession、RiskClassification、AnalysisResult 模型）
+
+**Task 1.6: Mock 版分析接口**
+- [ ] 实现 `app/api/routes/analyze.py`
+- [ ] 创建 `POST /api/analyze-conflict` 路由
+- [ ] 返回硬编码的 Mock 数据（假装分析完成）
+- [ ] 在 Swagger 文档中添加详细的请求/响应示例
+- [ ] 测试接口可用性（通过 Swagger UI 或 curl）
+
+**Task 1.7: 认证基础（简化版）**
+- [ ] 实现 `app/api/routes/auth.py`
+- [ ] 创建 `POST /api/auth/send-code`（暂时只打印验证码到日志）
+- [ ] 创建 `POST /api/auth/verify-code`（返回假 JWT）
+- [ ] 实现 JWT 生成工具（`app/core/security.py`）
+
+**验收标准**：
+- ✅ 使用 `npm run db:start` 可以启动 MongoDB 容器
+- ✅ 使用 `npm run backend:dev` 可以启动 FastAPI 服务
+- ✅ 使用 `npm run dev` 可以同时启动数据库和后端
+- ✅ 访问 `http://localhost:8000/docs` 可以看到完整的 Swagger API 文档
+- ✅ 在 Swagger UI 中调用 Mock 分析接口返回预期 JSON 结构
+- ✅ MongoDB 容器正常运行，可通过 `docker ps` 查看
+
+---
+
+### 9.3 Phase 2: 核心分析流程实现（Week 2）
+
+**目标**：接入真实 LLM，实现 RiskClassifier、Orchestrator、ResponseGuard
+
+#### 任务清单
+
+**Task 2.1: LLM 客户端封装**
+- [ ] 实现 `app/services/llm_client.py`
+- [ ] 封装 OpenAI API 调用（`generate()` 方法）
+- [ ] 实现超时与重试逻辑（使用 tenacity）
+- [ ] 测试单独调用 LLM 生成 JSON
+
+**Task 2.2: Prompt 模板编写**
+- [ ] 创建 `app/prompts/standard.py`（标准模式 Prompt）
+- [ ] 创建 `app/prompts/cautious.py`（谨慎模式 Prompt）
+- [ ] 创建 `app/prompts/high_risk.py`（高风险模式 Prompt）
+- [ ] 测试 Prompt 效果（手动输入样例文本，检查输出质量）
+
+**Task 2.3: RiskClassifier 实现**
+- [ ] 实现 `app/services/risk_classifier.py`
+- [ ] 编写关键词规则（参考 8.2.3）
+- [ ] 编写单元测试（覆盖 LOW/MEDIUM/HIGH/CRITICAL 各场景）
+- [ ] 测试通过率 > 95%
+
+**Task 2.4: ResponseGuard 实现**
+- [ ] 实现 `app/services/response_guard.py`
+- [ ] 编写禁止内容检测规则（参考 8.4.2）
+- [ ] 实现改写流程（Self-Refine）
+- [ ] 编写单元测试（覆盖 pass/refine/reject 场景）
+
+**Task 2.5: Orchestrator 主流程**
+- [ ] 实现 `app/services/orchestrator.py`
+- [ ] 编排完整分析流程（参考 5.2.2）：
+  - 创建 session → RiskClassifier → 选择 Prompt → LLM → ResponseGuard → 更新 session
+- [ ] 实现错误处理与降级响应
+- [ ] 实现数据加密存储（`app/core/security.py` 中的 `encrypt/decrypt`）
+
+**Task 2.6: 更新分析接口**
+- [ ] 修改 `app/api/routes/analyze.py`，调用真实 Orchestrator
+- [ ] 移除 Mock 数据，返回真实分析结果
+- [ ] 添加请求参数验证（文本长度、必填字段）
+
+**验收标准**：
+- ✅ 输入真实聊天记录，返回结构化分析 JSON
+- ✅ 高风险输入触发安全模式，返回求助引导
+- ✅ 单元测试覆盖率 > 80%
+
+---
+
+### 9.4 Phase 3: 前端页面与交互（Week 2-3）
+
+**目标**：使用 React Native + Expo 实现 MVP 核心页面
+
+#### 任务清单
+
+**Task 3.1: 项目初始化**
+- [ ] 使用 Expo CLI 创建项目（`expo init wavecho-app --template blank-typescript`）
+- [ ] 安装依赖：React Navigation、React Query、Axios
+- [ ] 配置 TypeScript（`tsconfig.json`）
+- [ ] 创建目录结构（`screens/`, `components/`, `hooks/`, `theme/`, `api/`）
+
+**Task 3.2: 主题系统实现**
+- [ ] 创建 `theme/colors.ts`（定义配色，参考 4.4.1）
+- [ ] 创建 `theme/typography.ts`（定义字体层级）
+- [ ] 创建 `theme/ThemeContext.tsx`（Theme Provider）
+- [ ] 测试主题切换结构（MVP 只实现 Light Mode）
+
+**Task 3.3: API 客户端封装**
+- [ ] 创建 `api/client.ts`（Axios 实例配置，baseURL、headers）
+- [ ] 创建 `api/analyze.ts`（封装 `POST /api/analyze-conflict` 请求）
+- [ ] 创建 `api/auth.ts`（封装认证相关请求）
+
+**Task 3.4: 页面实现 - WelcomeScreen**
+- [ ] 创建 `screens/WelcomeScreen.tsx`
+- [ ] 显示 Logo + 品牌标语
+- [ ] 提供"登录"和"匿名试用"按钮
+- [ ] 导航到 AuthScreen 或 AnalyzeInputScreen
+
+**Task 3.5: 页面实现 - AuthScreen（简化版）**
+- [ ] 创建 `screens/AuthScreen.tsx`
+- [ ] 邮箱输入框 + "发送验证码"按钮
+- [ ] 验证码输入框 + "登录"按钮
+- [ ] 调用 `POST /api/auth/verify-code`，存储 JWT 到 AsyncStorage
+- [ ] 登录成功后导航到 AnalyzeInputScreen
+
+**Task 3.6: 页面实现 - AnalyzeInputScreen**
+- [ ] 创建 `screens/AnalyzeInputScreen.tsx`
+- [ ] 创建子组件：
+  - `ConversationInput.tsx`（多行文本框）
+  - `ContextInput.tsx`（背景描述输入）
+  - `SubmitButton.tsx`（提交按钮）
+  - `SafetyDisclaimer.tsx`（底部免责声明）
+- [ ] 实现输入验证（10-5000 字）
+- [ ] 点击提交，调用 `useAnalyzeConflict()` Hook
+
+**Task 3.7: 页面实现 - LoadingScreen**
+- [ ] 创建 `screens/LoadingScreen.tsx`
+- [ ] 显示 Logo 呼吸动画（使用 `Animated` API）
+- [ ] 显示随机加载文案（每 3 秒切换）
+- [ ] 超时处理（60 秒后显示错误提示）
+
+**Task 3.8: 页面实现 - ResultScreen**
+- [ ] 创建 `screens/ResultScreen.tsx`
+- [ ] 创建子组件（参考 4.2.2）：
+  - `SafetyAlert.tsx`（高风险提示卡片）
+  - `TimelineCard.tsx`（事件时间线）
+  - `EmotionCard.tsx`（情绪分析）
+  - `NeedsCard.tsx`（需求分析）
+  - `AdviceCard.tsx`（建议消息，支持复制）
+- [ ] 实现 ScrollView 布局
+- [ ] 提供"返回首页"按钮
+
+**Task 3.9: 状态管理集成**
+- [ ] 创建 `hooks/useAnalyzeConflict.ts`（React Query mutation）
+- [ ] 创建 `contexts/UserContext.tsx`（用户信息状态）
+- [ ] 实现加载状态、错误处理的全局 Toast
+
+**Task 3.10: 导航配置**
+- [ ] 创建 `navigation/AppNavigator.tsx`
+- [ ] 配置 Stack Navigator（参考 4.1.3）
+- [ ] 实现页面间导航（Welcome → Auth → AnalyzeInput → Loading → Result）
+
+**验收标准**：
+- ✅ 可以完整走通：欢迎 → 登录 → 输入 → 加载 → 结果页
+- ✅ UI 符合设计规范（配色、字体、圆角、间距）
+- ✅ 加载状态、错误提示正常显示
+
+---
+
+### 9.5 Phase 4: 联调与安全加固（Week 3-4）
+
+**目标**：前后端联调，修复 Bug，加固安全策略
+
+#### 任务清单
+
+**Task 4.1: 前后端联调**
+- [ ] 前端调用真实后端 API（修改 `baseURL` 为后端地址）
+- [ ] 测试完整流程：输入 → 提交 → 返回结果
+- [ ] 修复接口字段不匹配问题
+- [ ] 测试网络错误、超时等边界情况
+
+**Task 4.2: 高风险场景测试**
+- [ ] 输入包含自杀关键词的文本，验证：
+  - RiskClassifier 正确识别为 CRITICAL
+  - ResultScreen 显示红色安全提示卡片
+  - 不生成和解建议
+- [ ] 输入暴力威胁文本，验证 ResponseGuard 拦截
+- [ ] 输入普通文本，验证正常流程
+
+**Task 4.3: 日志与监控配置**
+- [ ] 配置 Python logging（使用 structlog）
+- [ ] 确保敏感数据不被记录（参考 8.5.1）
+- [ ] 记录关键指标（riskLevel、latency、guardAction）
+- [ ] （可选）接入日志分析平台（如 Sentry）
+
+**Task 4.4: 性能优化**
+- [ ] 前端：优化 ResultScreen 渲染性能（使用 `React.memo`）
+- [ ] 后端：添加数据库查询索引（如已创建则验证）
+- [ ] 后端：LLM 请求并发控制（避免滥用）
+
+**Task 4.5: 安全审查**
+- [ ] Code Review：检查是否有明文存储敏感数据
+- [ ] 检查 JWT secret 是否使用环境变量
+- [ ] 检查加密密钥是否安全存储
+- [ ] 运行所有单元测试，确保通过率 > 90%
+
+**验收标准**：
+- ✅ 前后端完整联调通过
+- ✅ 高风险场景测试全部通过
+- ✅ 日志记录正确，无敏感信息泄露
+- ✅ 性能达标（分析耗时 < 30 秒）
+
+---
+
+### 9.6 Phase 5: 测试与打磨（Week 4）
+
+**目标**：修复细节问题，优化用户体验，准备发布
+
+#### 任务清单
+
+**Task 5.1: 用户体验优化**
+- [ ] 优化 LoadingScreen 动画流畅度
+- [ ] 优化 AdviceCard 的消息复制交互（显示"已复制"提示）
+- [ ] 优化输入框体验（字数统计、实时验证提示）
+- [ ] 优化错误提示文案（更友好、更具体）
+
+**Task 5.2: 边界情况测试**
+- [ ] 测试极短输入（< 10 字）
+- [ ] 测试极长输入（> 5000 字）
+- [ ] 测试特殊字符输入（emoji、换行符）
+- [ ] 测试网络断开时的行为
+- [ ] 测试后端服务挂掉时的前端降级
+
+**Task 5.3: 多设备适配**
+- [ ] 测试 iOS 设备（iPhone 不同尺寸）
+- [ ] 测试 Android 设备（不同分辨率）
+- [ ] 测试横屏模式（如需支持）
+- [ ] 修复布局问题（SafeAreaView、KeyboardAvoidingView）
+
+**Task 5.4: 安全回归测试**
+- [ ] 运行所有 RiskClassifier 单元测试
+- [ ] 运行所有 ResponseGuard 单元测试
+- [ ] 运行回放测试（100 个测试用例）
+- [ ] 手动测试 10 个真实场景（涵盖各风险等级）
+
+**Task 5.5: 文档与部署准备**
+- [ ] 编写 `README.md`，包含：
+  - 项目介绍与技术栈
+  - 快速开始：`npm install` → `npm run install:all` → `npm run dev`
+  - 环境变量配置说明（`.env.example`）
+  - 常用命令列表（`npm run` 脚本说明）
+- [ ] 编写 `DEPLOYMENT.md`（部署指南：后端 Docker 化、前端 Expo 发布）
+- [ ] 确保 `.env.example` 已创建（去除真实密钥）
+- [ ] 验证 `docker-compose.yml` 配置正确（已在 Phase 1 创建）
+- [ ] 添加生产环境 docker-compose 配置（`docker-compose.prod.yml`，包含后端服务）
+
+**Task 5.6: MVP 发布**
+- [ ] 后端部署到云服务器（推荐：Railway、Fly.io、AWS ECS）
+- [ ] MongoDB 部署（推荐：MongoDB Atlas 免费层）
+- [ ] 前端通过 Expo 发布到 TestFlight / Google Play Internal Testing
+- [ ] 邀请 5-10 位内测用户试用
+
+**验收标准**：
+- ✅ MVP 完整功能可用，无阻塞性 Bug
+- ✅ 安全测试全部通过
+- ✅ 部署成功，可供外部用户访问
+- ✅ 文档完整，新开发者可以快速上手
+
+---
+
+### 9.7 后续迭代方向（V2 Feature Ideas）
+
+**Phase 6+（MVP 之后）**：
+
+**功能扩展**：
+- [ ] 历史记录页（HistoryScreen）
+- [ ] 分析记录的云端同步
+- [ ] 支持语音输入（Speech-to-Text）
+- [ ] 支持截图识别聊天记录（OCR）
+- [ ] 多语言支持（英文、日文）
+
+**安全增强**：
+- [ ] 接入专业情感分析模型（替代规则引擎）
+- [ ] 增加人工审核机制（高风险会话）
+- [ ] 数据脱敏增强（差分隐私）
+
+**体验优化**：
+- [ ] 深色模式（Dark Mode）
+- [ ] 个性化主题配置
+- [ ] 分析结果分享功能（生成图片）
+- [ ] 推送通知（分析完成提醒）
+
+**商业化**：
+- [ ] 免费额度 + 订阅制（高级功能）
+- [ ] 付费解锁历史记录云端存储
+- [ ] 企业版（团队协作复盘）
+
+---
+
+## 10. 总结与关键决策
+
+### 10.1 技术选型总结
+
+| 技术点 | 选型 | 理由 |
+|--------|------|------|
+| 前端框架 | React Native + Expo | 跨平台、开发效率高、生态成熟 |
+| 前端语言 | TypeScript | 类型安全、降低错误 |
+| 后端框架 | FastAPI | 高性能、自动文档（Swagger）、异步支持 |
+| Python 包管理 | **uv** | 极速依赖安装、现代化工作流、兼容 pip 生态 |
+| 数据库 | MongoDB | 非结构化数据友好、易扩展 |
+| 数据库部署 | Docker Compose | 本地开发一键启动、环境隔离、易于迁移 |
+| LLM | OpenAI GPT-4 Turbo | 理解力强、输出稳定 |
+| 认证 | JWT + 邮箱验证码 | 简单可靠、易于实现 |
+| 项目命令管理 | **npm scripts** | 统一前后端命令入口、降低学习成本、便于 CI/CD |
+
+### 10.2 核心设计原则
+
+1. **安全第一**：三层防护（输入检测 → 分级 Prompt → 输出审查）
+2. **隐私保护**：端到端加密、日志脱敏、数据可删除
+3. **降级优雅**：LLM 失败时返回安全的降级响应，而非报错
+4. **可测试性**：关键模块（RiskClassifier、ResponseGuard）有完整单元测试
+5. **可扩展性**：模块化设计，易于添加新功能（如多 LLM 支持、多语言）
+
+### 10.3 风险与应对
+
+| 风险 | 影响 | 应对措施 |
+|------|------|---------|
+| LLM 输出不可控 | 可能生成不安全建议 | ResponseGuard 多重审查 + 回放测试 |
+| LLM 成本过高 | 运营成本不可持续 | 初期限制免费额度、未来引入 GPT-3.5 降级 |
+| 用户滥用 | 恶意输入、频繁请求 | Rate Limit + 单用户每日配额 |
+| 隐私泄露 | 监管风险、用户信任危机 | 加密存储 + 日志脱敏 + 数据可删除 |
+
+### 10.4 成功指标（MVP 阶段）
+
+**技术指标**：
+- 分析成功率 > 95%
+- 平均响应时间 < 30 秒
+- 安全测试通过率 = 100%
+
+**产品指标**：
+- 内测用户留存率 > 60%（7 天）
+- 用户反馈"有帮助"比例 > 70%
+- 无重大安全事故
+
+---
+
+**文档编写完成日期**: 2025-11-26  
+**下一步**: 等待确认后，进入 Phase 1 开发阶段
+

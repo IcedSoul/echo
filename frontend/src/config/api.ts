@@ -28,13 +28,11 @@ export const getApiBaseUrl = (): string => {
   
   if (!__DEV__) {
     // 生产环境
-    return 'https://your-production-api.com/api';
+    return 'https://wavecho.cn/echo/api';
   }
   
   // 开发环境
   if (Platform.OS === 'android') {
-    // Android 模拟器使用 10.0.2.2
-    // Android 实体设备需要使用电脑的局域网 IP
     const localIP = getLocalIP();
     if (localIP === 'localhost') {
       return `http://10.0.2.2:${API_PORT}/api`;
@@ -60,7 +58,7 @@ export const getApiBaseUrl = (): string => {
  * 2. 取消下面的注释，填入您的 IP 地址
  * 3. 重启 Expo 开发服务器
  */
-// export const API_BASE_URL = 'http://10.86.122.212:8081/api';
+// export const API_BASE_URL = 'https://wavecho.cn/echo/api';
 
 export const API_BASE_URL = getApiBaseUrl();
 

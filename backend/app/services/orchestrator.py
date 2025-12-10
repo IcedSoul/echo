@@ -234,6 +234,7 @@ class AnalysisOrchestrator:
         session_doc = {
             "session_id": session_id,
             "user_id": request.user_id,
+            "type": "conflict",  # 标记为冲突复盘类型
             "status": "processing",
             "input_conversation_encrypted": encrypted_text,
             "input_context_encrypted": encrypted_context,

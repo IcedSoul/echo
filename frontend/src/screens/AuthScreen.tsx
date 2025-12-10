@@ -9,11 +9,13 @@ import {
   TouchableOpacity,
   Modal,
   ScrollView,
+  Image,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppDispatch } from '../store/hooks';
+import { INPUT_BASE_STYLE } from '../components/Input';
 import { loginSuccess } from '../store/slices/authSlice';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { RootStackParamList } from '../types';
@@ -133,7 +135,7 @@ export const AuthScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   return (
-    <ScreenContainer backgroundColor={theme.colors.surface}>
+    <ScreenContainer backgroundColor={theme.colors.surface} safeAreaTop>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
@@ -141,14 +143,10 @@ export const AuthScreen: React.FC<Props> = ({ navigation }) => {
         <View style={styles.content}>
           {/* Logo & Title - Same position as WelcomeScreen */}
           <View style={styles.logoContainer}>
-            <LinearGradient
-              colors={[theme.colors.gradientStart, theme.colors.gradientEnd]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.logoGradient}
-            >
-              <Ionicons name="water" size={40} color={theme.colors.textWhite} />
-            </LinearGradient>
+            <Image
+              source={require('../../assets/icon-2.png')}
+              style={styles.logoImage}
+            />
             <Text style={[styles.title, { color: theme.colors.textPrimary }]}>
               Wavecho
             </Text>
@@ -460,17 +458,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 48,
   },
-  logoGradient: {
+  logoImage: {
     width: 80,
     height: 80,
     borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#06B6D4',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
   },
   title: {
     fontSize: 28,
@@ -506,13 +497,10 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   input: {
-    height: 48,
+    ...INPUT_BASE_STYLE,
     paddingLeft: 48,
     paddingRight: 16,
-    paddingVertical: 0,
-    fontSize: 14,
     borderRadius: 10,
-    textAlignVertical: 'center',
   },
   gradientButtonWrapper: {
     borderRadius: 10,

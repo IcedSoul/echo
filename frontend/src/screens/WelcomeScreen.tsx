@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Image,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -28,23 +29,15 @@ export const WelcomeScreen: React.FC<Props> = ({ navigation }) => {
     navigation.navigate('Auth');
   };
 
-  const handleAnonymousTry = () => {
-    navigation.navigate('AnalyzeInput');
-  };
-
   return (
-    <ScreenContainer backgroundColor={theme.colors.surface}>
+    <ScreenContainer backgroundColor={theme.colors.surface} safeAreaTop>
       <View style={styles.content}>
         {/* Logo & Title */}
         <View style={styles.logoContainer}>
-          <LinearGradient
-            colors={[theme.colors.gradientStart, theme.colors.gradientEnd]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.logoGradient}
-          >
-            <Ionicons name="water" size={40} color={theme.colors.textWhite} />
-          </LinearGradient>
+          <Image
+            source={require('../../assets/icon-2.png')}
+            style={styles.logoImage}
+          />
           <Text style={[styles.title, { color: theme.colors.textPrimary }]}>
             Wavecho
           </Text>
@@ -88,20 +81,6 @@ export const WelcomeScreen: React.FC<Props> = ({ navigation }) => {
             >
               <Text style={styles.gradientButtonText}>登录 / 注册</Text>
             </LinearGradient>
-          </TouchableOpacity>
-
-          {/* Secondary Button */}
-          <TouchableOpacity
-            onPress={handleAnonymousTry}
-            activeOpacity={0.8}
-            style={[
-              styles.outlineButton,
-              { borderColor: theme.colors.primary },
-            ]}
-          >
-            <Text style={[styles.outlineButtonText, { color: theme.colors.primary }]}>
-              匿名试用
-            </Text>
           </TouchableOpacity>
         </View>
 
@@ -149,17 +128,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 48,
   },
-  logoGradient: {
+  logoImage: {
     width: 80,
     height: 80,
     borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#06B6D4',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
   },
   title: {
     fontSize: 28,
@@ -219,18 +191,6 @@ const styles = StyleSheet.create({
   },
   gradientButtonText: {
     color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  outlineButton: {
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-    borderWidth: 1.5,
-    backgroundColor: 'transparent',
-  },
-  outlineButtonText: {
     fontSize: 15,
     fontWeight: '600',
   },

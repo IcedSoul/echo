@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # MongoDB 数据库服务
+  mongodb:
+    image: mongo:7.0
+    container_name: wavecho-mongodb-prod
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-wavecho}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_INITDB_DATABASE: wavecho_prod
+    volumes:
+      - mongodb_data_prod:/data/db
+      - mongodb_config_prod:/data/configdb
+    networks:
+      - wavecho-network-prod
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Wavecho 后端 API 服务
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: uswccr.ccs.tencentyun.com/xiaofeng/wavecho:1.0.1
+    container_name: wavecho-backend-prod
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      # 应用配置
+      APP_ENV: production
+      LOG_LEVEL: INFO
+      
+      # MongoDB 配置
+      MONGO_URI: mongodb://${MONGO_USERNAME:-wavecho}:${MONGO_PASSWORD}@mongodb:27017/wavecho_prod?authSource=admin
+      MONGO_DB_NAME: wavecho_prod
+      
+      # JWT 配置
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-43200}
+      
+      # OpenAI API 配置
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-qwen-flash}
+      
+      # 数据加密密钥
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      
+      # CORS 配置
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://wavecho.cn,https://www.wavecho.cn}
+
+      # 阿里云短信配置
+      ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID}
+      ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET}
+      ALIYUN_SMS_SIGN_NAME: ${ALIYUN_SMS_SIGN_NAME}
+      ALIYUN_SMS_TEMPLATE_CODE: ${ALIYUN_SMS_TEMPLATE_CODE}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - wavecho-network-prod
+      - nginx-network  # 加入 nginx 网络
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  mongodb_data_prod:
+    driver: local
+  mongodb_config_prod:
+    driver: local
+
+networks:
+  wavecho-network-prod:
+    driver: bridge
+  nginx-network:
+    driver: bridge
+    # external: true
+    # name: affine_default
+

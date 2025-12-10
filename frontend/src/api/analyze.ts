@@ -47,15 +47,21 @@ export const getUserHistory = async (
   userId: string,
   token?: string,
   limit: number = 50,
-  offset: number = 0
+  offset: number = 0,
+  type?: string
 ): Promise<HistoryResponse> => {
   const headers: any = {};
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
   
+  const params: any = { user_id: userId, limit, offset };
+  if (type) {
+    params.type = type;
+  }
+  
   const response = await apiClient.get('/history', {
-    params: { user_id: userId, limit, offset },
+    params,
     headers,
   });
   
@@ -64,6 +70,7 @@ export const getUserHistory = async (
   return {
     items: data.items.map((item: any) => ({
       sessionId: item.session_id,
+      type: item.type || 'conflict',
       riskLevel: item.risk_level,
       summary: item.summary,
       createdAt: item.created_at,

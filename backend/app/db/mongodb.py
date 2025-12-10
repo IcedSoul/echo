@@ -71,9 +71,32 @@ class MongoDB:
             # users 集合索引
             # user_id 是唯一标识，email 和 phone 是登录方式（可选）
             users = cls.get_collection("users")
+            
+            # 数据迁移：将 phone: null 和 email: null 的字段删除
+            # 这样 sparse 索引才能正常工作
+            await users.update_many(
+                {"phone": None},
+                {"$unset": {"phone": ""}}
+            )
+            await users.update_many(
+                {"email": None},
+                {"$unset": {"email": ""}}
+            )
+            logger.info("✓ 已清理 null 值字段")
+            
+            # 先尝试删除可能存在的旧索引（非 sparse 的）
+            try:
+                await users.drop_index("email_1")
+            except Exception:
+                pass  # 索引不存在，忽略
+            try:
+                await users.drop_index("phone_1")
+            except Exception:
+                pass  # 索引不存在，忽略
+            
             await users.create_index("user_id", unique=True)
-            await users.create_index("email", unique=True, sparse=True)  # sparse=True 允许多个 null
-            await users.create_index("phone", unique=True, sparse=True)  # sparse=True 允许多个 null
+            await users.create_index("email", unique=True, sparse=True)  # sparse=True 允许多个缺失字段
+            await users.create_index("phone", unique=True, sparse=True)  # sparse=True 允许多个缺失字段
             await users.create_index("created_at")
             logger.info("✓ users 集合索引创建完成")
             

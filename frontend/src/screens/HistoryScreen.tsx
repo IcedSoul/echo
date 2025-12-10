@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,14 +10,14 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { useFocusEffect } from '@react-navigation/native';
+import { RouteProp, useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppSelector } from '../store/hooks';
 import { ScreenContainer } from '../components/ScreenContainer';
-import { RootStackParamList, HistoryItem } from '../types';
+import { INPUT_SMALL_STYLE } from '../components/Input';
+import { RootStackParamList, HistoryItem, HistoryType } from '../types';
 import { getUserHistory, getAnalysisResult } from '../api/analyze';
-import { getCurrentUserId } from '../utils/storage';
 import { Ionicons } from '@expo/vector-icons';
 
 type HistoryScreenNavigationProp = StackNavigationProp<
@@ -25,14 +25,38 @@ type HistoryScreenNavigationProp = StackNavigationProp<
   'History'
 >;
 
+type HistoryScreenRouteProp = RouteProp<RootStackParamList, 'History'>;
+
 interface Props {
   navigation: HistoryScreenNavigationProp;
+  route: HistoryScreenRouteProp;
 }
 
-export const HistoryScreen: React.FC<Props> = ({ navigation }) => {
+const TYPE_CONFIG: Record<HistoryType, { title: string; emptyRoute: keyof RootStackParamList; emptyText: string }> = {
+  conflict: {
+    title: '冲突复盘',
+    emptyRoute: 'AnalyzeInput',
+    emptyText: '开始复盘',
+  },
+  situation: {
+    title: '情况评理',
+    emptyRoute: 'SituationJudgeInput',
+    emptyText: '开始评理',
+  },
+  expression: {
+    title: '表达助手',
+    emptyRoute: 'ExpressionHelperInput',
+    emptyText: '开始优化',
+  },
+};
+
+export const HistoryScreen: React.FC<Props> = ({ navigation, route }) => {
   const { theme } = useTheme();
   const token = useAppSelector((state) => state.auth.token);
   const user = useAppSelector((state) => state.auth.user);
+  
+  const historyType = route.params?.type || 'conflict';
+  const typeConfig = TYPE_CONFIG[historyType];
   
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,11 +65,11 @@ export const HistoryScreen: React.FC<Props> = ({ navigation }) => {
 
   const loadHistory = useCallback(async () => {
     try {
-      // 获取当前用户 ID（登录用户或匿名用户）
-      const userId = user?.userId || await getCurrentUserId();
+      const userId = user?.userId;
+      if (!userId) return;
       
-      // 从后端获取历史记录
-      const response = await getUserHistory(userId, token || undefined);
+      // 从后端获取历史记录（带类型过滤）
+      const response = await getUserHistory(userId, token || undefined, 50, 0, historyType);
       setHistory(response.items);
     } catch (error) {
       console.error('Failed to load history:', error);
@@ -53,7 +77,7 @@ export const HistoryScreen: React.FC<Props> = ({ navigation }) => {
     } finally {
       setLoading(false);
     }
-  }, [token, user?.userId]);
+  }, [token, user?.userId, historyType]);
 
   // 页面获得焦点时刷新
   useFocusEffect(
@@ -61,6 +85,13 @@ export const HistoryScreen: React.FC<Props> = ({ navigation }) => {
       loadHistory();
     }, [loadHistory])
   );
+
+  // 设置导航标题
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      title: `${typeConfig.title}历史`,
+    });
+  }, [navigation, typeConfig.title]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -70,18 +101,25 @@ export const HistoryScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleViewDetail = async (item: HistoryItem) => {
     try {
-      // 获取当前用户 ID
-      const userId = user?.userId || await getCurrentUserId();
+      const userId = user?.userId;
+      if (!userId) return;
       
-      // 从后端获取完整的分析结果
-      const result = await getAnalysisResult(item.sessionId, userId, token || undefined);
-      
-      if (result.analysis_result) {
-        navigation.navigate('Result', {
-          sessionId: item.sessionId,
-          riskLevel: item.riskLevel,
-          result: result.analysis_result,
-        });
+      // 根据类型导航到不同的结果页
+      if (historyType === 'conflict') {
+        const result = await getAnalysisResult(item.sessionId, userId, token || undefined);
+        if (result.analysis_result) {
+          navigation.navigate('Result', {
+            sessionId: item.sessionId,
+            riskLevel: item.riskLevel || 'LOW',
+            result: result.analysis_result,
+          });
+        }
+      } else if (historyType === 'situation') {
+        // TODO: 导航到情况评理结果页
+        // navigation.navigate('SituationJudgeResult', { ... });
+      } else if (historyType === 'expression') {
+        // TODO: 导航到表达助手结果页
+        // navigation.navigate('ExpressionHelperResult', { ... });
       }
     } catch (error) {
       console.error('Failed to get analysis result:', error);
@@ -104,7 +142,7 @@ export const HistoryScreen: React.FC<Props> = ({ navigation }) => {
     return date.toLocaleDateString('zh-CN');
   };
 
-  const getRiskConfig = (level: string) => {
+  const getRiskConfig = (level?: string) => {
     switch (level) {
       case 'HIGH':
       case 'CRITICAL':
@@ -129,12 +167,7 @@ export const HistoryScreen: React.FC<Props> = ({ navigation }) => {
           icon: 'checkmark-circle' as const,
         };
       default:
-        return {
-          bg: theme.colors.riskSafeBg,
-          text: theme.colors.riskSafe,
-          label: '健康',
-          icon: 'checkmark-circle' as const,
-        };
+        return null;
     }
   };
 
@@ -152,7 +185,7 @@ export const HistoryScreen: React.FC<Props> = ({ navigation }) => {
           <Ionicons name="search" size={16} color={theme.colors.textTertiary} />
           <TextInput
             style={[styles.searchInput, { color: theme.colors.textPrimary }]}
-            placeholder="搜索对话记录..."
+            placeholder="搜索记录..."
             placeholderTextColor={theme.colors.textTertiary}
             value={searchText}
             onChangeText={setSearchText}
@@ -179,11 +212,11 @@ export const HistoryScreen: React.FC<Props> = ({ navigation }) => {
             <View style={styles.emptyContainer}>
               <Ionicons name="document-text-outline" size={48} color={theme.colors.textTertiary} />
               <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
-                {searchText ? '没有找到匹配的记录' : '暂无分析历史'}
+                {searchText ? '没有找到匹配的记录' : '暂无历史记录'}
               </Text>
               {!searchText && (
                 <TouchableOpacity
-                  onPress={() => navigation.navigate('AnalyzeInput')}
+                  onPress={() => navigation.navigate(typeConfig.emptyRoute as any)}
                   activeOpacity={0.8}
                   style={styles.emptyButtonWrapper}
                 >
@@ -193,7 +226,7 @@ export const HistoryScreen: React.FC<Props> = ({ navigation }) => {
                     end={{ x: 1, y: 0 }}
                     style={styles.emptyButton}
                   >
-                    <Text style={styles.emptyButtonText}>开始分析</Text>
+                    <Text style={styles.emptyButtonText}>{typeConfig.emptyText}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               )}
@@ -226,13 +259,15 @@ export const HistoryScreen: React.FC<Props> = ({ navigation }) => {
                       {item.summary || '分析结果'}
                     </Text>
 
-                    {/* Risk Badge */}
-                    <View style={[styles.riskBadge, { backgroundColor: riskConfig.bg }]}>
-                      <Ionicons name={riskConfig.icon} size={12} color={riskConfig.text} />
-                      <Text style={[styles.riskBadgeText, { color: riskConfig.text }]}>
-                        {riskConfig.label}
-                      </Text>
-                    </View>
+                    {/* Risk Badge (only for conflict type) */}
+                    {riskConfig && (
+                      <View style={[styles.riskBadge, { backgroundColor: riskConfig.bg }]}>
+                        <Ionicons name={riskConfig.icon} size={12} color={riskConfig.text} />
+                        <Text style={[styles.riskBadgeText, { color: riskConfig.text }]}>
+                          {riskConfig.label}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 </TouchableOpacity>
               );
@@ -263,10 +298,8 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
-    height: 40,
-    paddingVertical: 0,
-    textAlignVertical: 'center',
+    ...INPUT_SMALL_STYLE,
+    paddingHorizontal: 0,
   },
   loadingContainer: {
     flex: 1,

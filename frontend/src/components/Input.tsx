@@ -10,9 +10,48 @@ import {
   StyleSheet,
   TextInputProps,
   ViewStyle,
+  TextStyle,
 } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+
+/**
+ * 全局统一的单行输入框基础样式
+ * 通过 height = lineHeight 实现文本垂直居中
+ */
+export const INPUT_BASE_STYLE: TextStyle = {
+  height: 48,
+  lineHeight: 48,
+  fontSize: 14,
+  padding: 0,
+  paddingTop: 5,
+  textAlignVertical: 'center',
+};
+
+/**
+ * 小尺寸输入框基础样式（如搜索框）
+ */
+export const INPUT_SMALL_STYLE: TextStyle = {
+  height: 40,
+  lineHeight: 40,
+  fontSize: 14,
+  padding: 0,
+  paddingTop: 5,
+  textAlignVertical: 'center',
+};
+
+/**
+ * 聊天输入框样式（多行，底部对齐）
+ */
+export const INPUT_CHAT_STYLE: TextStyle = {
+  fontSize: 15,
+  lineHeight: 22,
+  minHeight: 40,
+  maxHeight: 100,
+  padding: 0,
+  paddingTop: 5,
+  textAlignVertical: 'center',
+};
 
 interface InputProps extends TextInputProps {
   label?: string;
@@ -90,12 +129,9 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   input: {
-    height: 48,
+    ...INPUT_BASE_STYLE,
     borderRadius: 10,
     paddingRight: 16,
-    paddingVertical: 0,
-    fontSize: 14,
-    textAlignVertical: 'center',
   },
   error: {
     fontSize: 12,

@@ -23,13 +23,28 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#06B6D4"
       },
-      "package": "com.wavecho.app"
+      "package": "com.wavecho.app",
+      "permissions": [
+        "android.permission.INTERNET"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-asset"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "bfe9999d-e4a2-4bf7-9e1f-61106c9987e5"
+      }
+    },
+    "owner": "xiaofeng20",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/bfe9999d-e4a2-4bf7-9e1f-61106c9987e5"
+    }
   }
 }

@@ -14,6 +14,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
+import { INPUT_BASE_STYLE } from '../components/Input';
 import { logout, updateUser, setToken } from '../store/slices/authSlice';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { RootStackParamList } from '../types';
@@ -364,6 +365,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   scrollContent: {
     padding: 20,
+    paddingBottom: 40,
   },
   profileCard: {
     borderRadius: 10,
@@ -522,13 +524,10 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   modalInput: {
-    height: 48,
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 0,
+    ...INPUT_BASE_STYLE,
     fontSize: 15,
+    borderRadius: 10,
     borderWidth: 1,
-    textAlignVertical: 'center',
   },
   modalHint: {
     fontSize: 12,

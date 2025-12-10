@@ -176,6 +176,7 @@ async def get_user_history(
     user_id: str = Query(..., description="用户 ID（登录用户或匿名用户临时 ID）"),
     limit: int = Query(50, ge=1, le=100, description="返回数量限制"),
     offset: int = Query(0, ge=0, description="偏移量"),
+    type: Optional[str] = Query(None, description="记录类型：conflict, situation, expression"),
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ):
     """
@@ -184,6 +185,11 @@ async def get_user_history(
     安全机制：
     - 登录用户：只能查询自己的记录（通过 token 验证）
     - 匿名用户：通过传入的 user_id 查询（客户端生成的临时 ID）
+    
+    支持按类型过滤：
+    - conflict: 冲突复盘
+    - situation: 情况评理
+    - expression: 表达助手
     """
     try:
         # 验证用户权限
@@ -208,30 +214,58 @@ async def get_user_history(
         
         sessions = await get_sessions_collection()
         
+        # 构建查询条件
+        query = {
+            "user_id": user_id,
+            "status": "completed"  # 只返回已完成的
+        }
+        
+        # 按类型过滤
+        if type:
+            if type == "conflict":
+                # 冲突复盘：没有 type 字段或 type 为空的旧记录
+                query["$or"] = [
+                    {"type": {"$exists": False}},
+                    {"type": None},
+                    {"type": "conflict"}
+                ]
+            else:
+                query["type"] = type
+        
         # 查询用户的历史记录
-        cursor = sessions.find(
-            {
-                "user_id": user_id,
-                "status": "completed"  # 只返回已完成的
-            }
-        ).sort("created_at", -1).skip(offset).limit(limit)
+        cursor = sessions.find(query).sort("created_at", -1).skip(offset).limit(limit)
         
         items = []
         async for doc in cursor:
+            doc_type = doc.get("type", "conflict")  # 默认为 conflict
+            
+            # 根据类型提取 summary
+            if doc_type == "conflict" or not doc_type:
+                summary = doc.get("analysis_result", {}).get("summary", "")
+                risk_level = doc.get("risk_classification", {}).get("risk_level", "LOW")
+            elif doc_type == "situation":
+                summary = doc.get("analysis_result", {}).get("summary", "")
+                risk_level = None
+            elif doc_type == "expression":
+                # 表达助手没有 summary，使用第一条表达
+                expressions = doc.get("expressions", [])
+                summary = expressions[0].get("text", "") if expressions else ""
+                risk_level = None
+            else:
+                summary = ""
+                risk_level = None
+            
             items.append(HistoryItem(
                 session_id=doc["session_id"],
-                risk_level=doc.get("risk_classification", {}).get("risk_level", "LOW"),
-                summary=doc.get("analysis_result", {}).get("summary", ""),
+                risk_level=risk_level or "LOW",
+                summary=summary,
                 created_at=doc["created_at"]
             ))
         
         # 获取总数
-        total = await sessions.count_documents({
-            "user_id": user_id,
-            "status": "completed"
-        })
+        total = await sessions.count_documents(query)
         
-        logger.info(f"获取历史记录 - UserID: {user_id}, Count: {len(items)}, Total: {total}")
+        logger.info(f"获取历史记录 - UserID: {user_id}, Type: {type}, Count: {len(items)}, Total: {total}")
         
         return HistoryResponse(
             items=items,

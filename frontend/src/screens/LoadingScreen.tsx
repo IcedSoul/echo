@@ -68,6 +68,12 @@ export const LoadingScreen: React.FC<Props> = ({ navigation, route }) => {
             sessionId: data.session_id,
             riskLevel: data.risk_level,
             result: data.analysis_result,
+            // 传递原始输入数据，用于"补充背景/重新分析"
+            originalInput: {
+              conversationText,
+              contextDescription,
+              userId,
+            },
           });
         }
       } catch (error: any) {
@@ -161,7 +167,7 @@ export const LoadingScreen: React.FC<Props> = ({ navigation, route }) => {
   }, []);
 
   return (
-    <ScreenContainer backgroundColor={theme.colors.background}>
+    <ScreenContainer backgroundColor={theme.colors.background} safeAreaTop>
       <View style={styles.content}>
         {/* Wave Animation Visual */}
         <View style={styles.waveContainer}>

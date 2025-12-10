@@ -193,16 +193,15 @@ async def verify_code_and_login(request: VerificationCodeVerify):
             }
             
             # 根据账号类型设置字段
+            # 注意：不设置 null 值的字段，以便 sparse 索引正常工作
             if account_type == 'phone':
                 user_doc["phone"] = account
                 user_doc["phone_verified"] = True
-                user_doc["email"] = None
-                user_doc["email_verified"] = False
+                # 不设置 email 字段（而不是设置为 None）
             else:
                 user_doc["email"] = account
                 user_doc["email_verified"] = True
-                user_doc["phone"] = None
-                user_doc["phone_verified"] = False
+                # 不设置 phone 字段（而不是设置为 None）
             
             await users_collection.insert_one(user_doc)
             

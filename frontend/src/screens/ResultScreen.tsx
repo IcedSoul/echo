@@ -7,6 +7,9 @@ import {
   TouchableOpacity,
   Modal,
   Pressable,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
@@ -15,7 +18,7 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { RootStackParamList, RiskLevel, AdviceItem } from '../types';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
-import { showSuccess } from '../utils/toast';
+import { showSuccess, showWarning } from '../utils/toast';
 
 type ResultScreenNavigationProp = StackNavigationProp<
   RootStackParamList,
@@ -30,9 +33,14 @@ interface Props {
 
 export const ResultScreen: React.FC<Props> = ({ navigation, route }) => {
   const { theme } = useTheme();
-  const { sessionId, riskLevel, result } = route.params;
+  const { sessionId, riskLevel, result, originalInput } = route.params;
   const [selectedAdvice, setSelectedAdvice] = useState<AdviceItem | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  
+  // 补充背景/修改输入弹窗
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editConversation, setEditConversation] = useState(originalInput?.conversationText || '');
+  const [editContext, setEditContext] = useState(originalInput?.contextDescription || '');
 
   const copyToClipboard = async (text: string) => {
     await Clipboard.setStringAsync(text);
@@ -44,6 +52,30 @@ export const ResultScreen: React.FC<Props> = ({ navigation, route }) => {
     setModalVisible(true);
     await Clipboard.setStringAsync(advice.message);
     showSuccess({ title: '已复制', message: '建议已复制到剪贴板' });
+  };
+
+  // 打开编辑弹窗
+  const handleOpenEditModal = () => {
+    setEditConversation(originalInput?.conversationText || '');
+    setEditContext(originalInput?.contextDescription || '');
+    setEditModalVisible(true);
+  };
+
+  // 重新分析
+  const handleReanalyze = () => {
+    if (editConversation.length < 10) {
+      showWarning({ title: '提示', message: '对话内容至少需要10个字' });
+      return;
+    }
+    
+    setEditModalVisible(false);
+    
+    // 导航到 Loading 页面重新分析
+    navigation.replace('Loading', {
+      conversationText: editConversation,
+      contextDescription: editContext || undefined,
+      userId: originalInput?.userId || '',
+    });
   };
 
   const getRiskConfig = (level: RiskLevel) => {
@@ -315,6 +347,158 @@ export const ResultScreen: React.FC<Props> = ({ navigation, route }) => {
     </Modal>
   );
 
+  // 补充背景/修改输入弹窗
+  const renderEditModal = () => (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={editModalVisible}
+      onRequestClose={() => setEditModalVisible(false)}
+    >
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.editModalContainer}
+      >
+        <Pressable 
+          style={styles.editModalOverlay} 
+          onPress={() => setEditModalVisible(false)}
+        >
+          <Pressable 
+            style={[styles.editModalContent, { backgroundColor: theme.colors.surface }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.editModalHeader}>
+              <Text style={[styles.editModalTitle, { color: theme.colors.textPrimary }]}>
+                补充背景 / 修改输入
+              </Text>
+              <TouchableOpacity 
+                onPress={() => setEditModalVisible(false)}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView 
+              style={styles.editModalBody} 
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* 提示信息 */}
+              <View style={[styles.editHintBox, { backgroundColor: theme.colors.primaryAlpha10 }]}>
+                <Ionicons name="bulb-outline" size={16} color={theme.colors.primary} />
+                <Text style={[styles.editHintText, { color: theme.colors.textSecondary }]}>
+                  补充遗漏的信息或修正对话内容，可以让分析更准确
+                </Text>
+              </View>
+
+              {/* 背景说明输入 */}
+              <View style={styles.editInputSection}>
+                <Text style={[styles.editInputLabel, { color: theme.colors.textMuted }]}>
+                  背景说明
+                </Text>
+                <TextInput
+                  style={[
+                    styles.editContextInput,
+                    { 
+                      backgroundColor: theme.colors.inputBackground,
+                      color: theme.colors.textPrimary,
+                      borderColor: theme.colors.border,
+                    },
+                  ]}
+                  placeholder="补充当时的背景、心情、前因后果..."
+                  placeholderTextColor={theme.colors.textTertiary}
+                  value={editContext}
+                  onChangeText={setEditContext}
+                  multiline
+                  numberOfLines={3}
+                  maxLength={500}
+                  textAlignVertical="top"
+                />
+                <Text style={[styles.editCharCount, { color: theme.colors.textTertiary }]}>
+                  {editContext.length}/500
+                </Text>
+              </View>
+
+              {/* 对话内容输入 */}
+              <View style={styles.editInputSection}>
+                <Text style={[styles.editInputLabel, { color: theme.colors.textMuted }]}>
+                  对话内容
+                </Text>
+                <TextInput
+                  style={[
+                    styles.editConversationInput,
+                    { 
+                      backgroundColor: theme.colors.inputBackground,
+                      color: theme.colors.textPrimary,
+                      borderColor: theme.colors.border,
+                    },
+                  ]}
+                  placeholder="修改或补充对话内容..."
+                  placeholderTextColor={theme.colors.textTertiary}
+                  value={editConversation}
+                  onChangeText={setEditConversation}
+                  multiline
+                  numberOfLines={8}
+                  maxLength={5000}
+                  textAlignVertical="top"
+                />
+                <Text style={[styles.editCharCount, { color: theme.colors.textTertiary }]}>
+                  {editConversation.length}/5000（至少10字）
+                </Text>
+              </View>
+            </ScrollView>
+
+            {/* 操作按钮 */}
+            <View style={styles.editModalFooter}>
+              <TouchableOpacity
+                style={[styles.editCancelButton, { borderColor: theme.colors.border }]}
+                onPress={() => setEditModalVisible(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.editCancelButtonText, { color: theme.colors.textSecondary }]}>
+                  取消
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.editSubmitButton,
+                  { backgroundColor: theme.colors.primary },
+                  editConversation.length < 10 && { opacity: 0.5 },
+                ]}
+                onPress={handleReanalyze}
+                activeOpacity={0.8}
+                disabled={editConversation.length < 10}
+              >
+                <Ionicons name="refresh-outline" size={18} color="#FFF" />
+                <Text style={styles.editSubmitButtonText}>重新分析</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+
+  // 底部操作栏
+  const renderBottomActions = () => (
+    <View style={[styles.bottomActions, { backgroundColor: theme.colors.surface }]}>
+      {originalInput && (
+        <TouchableOpacity
+          style={[styles.editButton, { backgroundColor: theme.colors.primaryAlpha10 }]}
+          onPress={handleOpenEditModal}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="create-outline" size={18} color={theme.colors.primary} />
+          <Text style={[styles.editButtonText, { color: theme.colors.primary }]}>
+            补充背景 / 重新分析
+          </Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
   return (
     <ScreenContainer backgroundColor={theme.colors.background}>
       {renderRiskBanner()}
@@ -325,7 +509,9 @@ export const ResultScreen: React.FC<Props> = ({ navigation, route }) => {
         {renderTimeline()}
         <View style={styles.bottomSpacing} />
       </ScrollView>
+      {renderBottomActions()}
       {renderAdviceModal()}
+      {renderEditModal()}
     </ScreenContainer>
   );
 };
@@ -569,6 +755,137 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   bottomSpacing: {
-    height: 16,
+    height: 80,
+  },
+  // 底部操作栏
+  bottomActions: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingBottom: 28,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 10,
+    gap: 8,
+  },
+  editButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  // 编辑弹窗样式
+  editModalContainer: {
+    flex: 1,
+  },
+  editModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  editModalContent: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+  },
+  editModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  editModalTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  editModalBody: {
+    padding: 20,
+    maxHeight: 400,
+  },
+  editHintBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: 10,
+    gap: 10,
+    marginBottom: 20,
+  },
+  editHintText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  editInputSection: {
+    marginBottom: 16,
+  },
+  editInputLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  editContextInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 14,
+    fontSize: 14,
+    lineHeight: 22,
+    minHeight: 80,
+  },
+  editConversationInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 14,
+    fontSize: 14,
+    lineHeight: 22,
+    minHeight: 160,
+  },
+  editCharCount: {
+    fontSize: 12,
+    textAlign: 'right',
+    marginTop: 6,
+  },
+  editModalFooter: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    paddingBottom: 32,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    gap: 12,
+  },
+  editCancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  editCancelButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  editSubmitButton: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 10,
+    gap: 6,
+  },
+  editSubmitButtonText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

@@ -12,14 +12,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy
 
 # 安装系统依赖和 uv
-# libgl1-mesa-glx, libglib2.0-0 等是 PaddleOCR/OpenCV 运行所需的库
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender1 \
     && rm -rf /var/lib/apt/lists/* \
     && pip install uv
 

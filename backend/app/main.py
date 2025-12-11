@@ -8,7 +8,7 @@ import logging
 
 from app.core.config import settings
 from app.db.mongodb import MongoDB
-from app.api.routes import auth, analyze, ocr, situation_judge, expression_helper, chat
+from app.api.routes import auth, analyze, ocr, asr, situation_judge, expression_helper, chat
 
 # 配置日志
 logging.basicConfig(
@@ -72,6 +72,7 @@ else:
 app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
 app.include_router(analyze.router, prefix="/api", tags=["分析"])
 app.include_router(ocr.router, prefix="/api", tags=["OCR"])
+app.include_router(asr.router, prefix="/api", tags=["语音识别"])
 app.include_router(situation_judge.router, prefix="/api", tags=["情况评理"])
 app.include_router(expression_helper.router, prefix="/api", tags=["表达助手"])
 app.include_router(chat.router, prefix="/api", tags=["AI聊天"])

@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     aliyun_sms_sign_name: str = ""  # 短信签名名称
     aliyun_sms_template_code: str = ""  # 短信模板CODE
     
+    # 腾讯云配置
+    tencent_secret_id: str = ""  # 腾讯云 SecretId
+    tencent_secret_key: str = ""  # 腾讯云 SecretKey
+    tencent_ocr_region: str = "ap-guangzhou"  # OCR 服务地域
+    tencent_asr_appid: str = ""  # 腾讯云 ASR AppId
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

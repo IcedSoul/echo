@@ -15,6 +15,13 @@
         "simulator": true
       }
     },
+    "development-local": {
+      "extends": "development",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "android": {
@@ -24,12 +31,24 @@
         "simulator": false
       }
     },
+    "preview-local": {
+      "extends": "preview",
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "production": {
       "android": {
         "buildType": "apk"
       },
       "ios": {
         "resourceClass": "m-medium"
+      }
+    },
+    "production-local": {
+      "extends": "production",
+      "android": {
+        "buildType": "apk"
       }
     }
   },

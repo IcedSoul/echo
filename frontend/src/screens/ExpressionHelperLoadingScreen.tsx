@@ -1,9 +1,9 @@
 /**
  * 表达助手加载页面
- * 显示生成表达的进度动画
+ * 显示生成表达的进度动画 - 统一使用波浪动画样式
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,6 @@ import {
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { RootStackParamList } from '../types';
@@ -29,66 +28,28 @@ interface Props {
   route: RouteProps;
 }
 
-const loadingSteps = [
-  { icon: 'reader-outline', text: '理解你的表达意图...' },
-  { icon: 'heart-outline', text: '分析情感基调...' },
-  { icon: 'color-palette-outline', text: '生成温和表达...' },
-  { icon: 'shield-outline', text: '生成坚定表达...' },
-  { icon: 'bulb-outline', text: '优化措辞...' },
+const loadingMessages = [
+  '正在理解你的表达意图...',
+  '正在分析情感基调...',
+  '正在生成温和表达...',
+  '正在生成坚定表达...',
+  '正在优化措辞...',
 ];
 
 export const ExpressionHelperLoadingScreen: React.FC<Props> = ({ navigation, route }) => {
   const { theme } = useTheme();
   const { message, intent, userId } = route.params;
+  const [messageIndex, setMessageIndex] = useState(0);
 
-  const [currentStep, setCurrentStep] = useState(0);
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const rotateAnim = useRef(new Animated.Value(0)).current;
+  // Animation values
+  const outerPulse = useState(new Animated.Value(1))[0];
+  const middlePulse = useState(new Animated.Value(1))[0];
+  const innerPulse = useState(new Animated.Value(1))[0];
+  const dotOpacity1 = useState(new Animated.Value(0.3))[0];
+  const dotOpacity2 = useState(new Animated.Value(0.3))[0];
+  const dotOpacity3 = useState(new Animated.Value(0.3))[0];
 
-  useEffect(() => {
-    // 脉冲动画
-    const pulseAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(scaleAnim, {
-          toValue: 1.1,
-          duration: 1000,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 1,
-          duration: 1000,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    );
-
-    // 旋转动画
-    const rotateAnimation = Animated.loop(
-      Animated.timing(rotateAnim, {
-        toValue: 1,
-        duration: 8000,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    );
-
-    pulseAnimation.start();
-    rotateAnimation.start();
-
-    // 步骤切换
-    const stepInterval = setInterval(() => {
-      setCurrentStep((prev) => (prev + 1) % loadingSteps.length);
-    }, 1800);
-
-    return () => {
-      pulseAnimation.stop();
-      rotateAnimation.stop();
-      clearInterval(stepInterval);
-    };
-  }, []);
-
+  // Start generation when component mounts
   useEffect(() => {
     const doGenerate = async () => {
       try {
@@ -113,97 +74,184 @@ export const ExpressionHelperLoadingScreen: React.FC<Props> = ({ navigation, rou
           title: '生成失败',
           message: error.message || '生成过程中遇到错误，请重试',
         });
-        navigation.goBack();
+        setTimeout(() => {
+          navigation.goBack();
+        }, 1500);
       }
     };
 
     doGenerate();
   }, [message, intent, userId]);
 
-  const rotate = rotateAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
+  useEffect(() => {
+    // Wave pulse animations
+    const createPulseAnimation = (animValue: Animated.Value, duration: number, delay: number) => {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(animValue, {
+            toValue: 1.15,
+            duration: duration,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(animValue, {
+            toValue: 1,
+            duration: duration,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+    };
 
-  const currentStepData = loadingSteps[currentStep];
+    const outerAnim = createPulseAnimation(outerPulse, 1000, 0);
+    const middleAnim = createPulseAnimation(middlePulse, 800, 200);
+    const innerAnim = createPulseAnimation(innerPulse, 600, 400);
+
+    outerAnim.start();
+    middleAnim.start();
+    innerAnim.start();
+
+    // Dot bounce animations
+    const createDotAnimation = (dotAnim: Animated.Value, delay: number) => {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(dotAnim, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(dotAnim, {
+            toValue: 0.3,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+    };
+
+    const dot1Anim = createDotAnimation(dotOpacity1, 0);
+    const dot2Anim = createDotAnimation(dotOpacity2, 200);
+    const dot3Anim = createDotAnimation(dotOpacity3, 400);
+
+    dot1Anim.start();
+    dot2Anim.start();
+    dot3Anim.start();
+
+    return () => {
+      outerAnim.stop();
+      middleAnim.stop();
+      innerAnim.stop();
+      dot1Anim.stop();
+      dot2Anim.stop();
+      dot3Anim.stop();
+    };
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setMessageIndex((prev) => (prev + 1) % loadingMessages.length);
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   return (
-    <ScreenContainer backgroundColor={theme.colors.background}>
-      <View style={styles.container}>
-        {/* Animation Area */}
-        <View style={styles.animationContainer}>
-          {/* Rotating ring */}
+    <ScreenContainer backgroundColor={theme.colors.background} safeAreaTop>
+      <View style={styles.content}>
+        {/* Wave Animation Visual */}
+        <View style={styles.waveContainer}>
+          {/* Outer wave */}
           <Animated.View
             style={[
-              styles.rotatingRing,
-              { transform: [{ rotate }] },
+              styles.waveRing,
+              styles.outerRing,
+              {
+                backgroundColor: 'rgba(20, 184, 166, 0.1)',
+                transform: [{ scale: outerPulse }],
+              },
             ]}
-          >
-            <LinearGradient
-              colors={['#14B8A6', '#06B6D4', '#14B8A6']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.ringGradient}
-            />
-          </Animated.View>
-
-          {/* Center icon */}
-          <Animated.View
-            style={[
-              styles.centerIcon,
-              { transform: [{ scale: scaleAnim }] },
-            ]}
-          >
-            <LinearGradient
-              colors={['#14B8A6', '#06B6D4']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.iconGradient}
-            >
-              <Ionicons name="create-outline" size={40} color="#FFF" />
-            </LinearGradient>
-          </Animated.View>
-        </View>
-
-        {/* Status Text */}
-        <View style={styles.statusContainer}>
-          <Text style={[styles.statusTitle, { color: theme.colors.textPrimary }]}>
-            正在优化表达
-          </Text>
+          />
           
-          <View style={styles.stepIndicator}>
-            <Ionicons
-              name={currentStepData.icon as keyof typeof Ionicons.glyphMap}
-              size={20}
-              color="#14B8A6"
-            />
-            <Text style={[styles.stepText, { color: theme.colors.textSecondary }]}>
-              {currentStepData.text}
-            </Text>
-          </View>
+          {/* Middle wave */}
+          <Animated.View
+            style={[
+              styles.waveRing,
+              styles.middleRing,
+              {
+                backgroundColor: 'rgba(20, 184, 166, 0.15)',
+                transform: [{ scale: middlePulse }],
+              },
+            ]}
+          />
+          
+          {/* Inner wave */}
+          <Animated.View
+            style={[
+              styles.waveRing,
+              styles.innerRing,
+              {
+                backgroundColor: 'rgba(20, 184, 166, 0.25)',
+                transform: [{ scale: innerPulse }],
+              },
+            ]}
+          />
+          
+          {/* Core */}
+          <LinearGradient
+            colors={['#14B8A6', '#06B6D4']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.core}
+          />
         </View>
 
-        {/* Progress dots */}
-        <View style={styles.progressDots}>
-          {loadingSteps.map((_, index) => (
-            <View
-              key={index}
-              style={[
-                styles.dot,
-                {
-                  backgroundColor:
-                    index === currentStep
-                      ? '#14B8A6'
-                      : theme.colors.border,
-                },
-              ]}
-            />
-          ))}
+        {/* Text */}
+        <View style={styles.textContainer}>
+          <Text style={[styles.title, { color: theme.colors.textPrimary }]}>
+            {loadingMessages[messageIndex]}
+          </Text>
+          <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+            AI 正在为你生成多种表达风格
+          </Text>
         </View>
 
-        {/* Hint */}
-        <Text style={[styles.hintText, { color: theme.colors.textTertiary }]}>
-          正在为你生成多种表达风格，请稍候...
+        {/* Progress Dots */}
+        <View style={styles.dotsContainer}>
+          <Animated.View
+            style={[
+              styles.dot,
+              {
+                backgroundColor: '#14B8A6',
+                opacity: dotOpacity1,
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.dot,
+              {
+                backgroundColor: '#14B8A6',
+                opacity: dotOpacity2,
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.dot,
+              {
+                backgroundColor: '#14B8A6',
+                opacity: dotOpacity3,
+              },
+            ]}
+          />
+        </View>
+
+        {/* Time hint */}
+        <Text style={[styles.timeHint, { color: theme.colors.textTertiary }]}>
+          生成通常需要5-15秒，请稍候...
         </Text>
       </View>
     </ScreenContainer>
@@ -211,76 +259,71 @@ export const ExpressionHelperLoadingScreen: React.FC<Props> = ({ navigation, rou
 };
 
 const styles = StyleSheet.create({
-  container: {
+  content: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  waveContainer: {
+    width: 192,
+    height: 192,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 40,
+    marginBottom: 48,
   },
-  animationContainer: {
-    width: 160,
-    height: 160,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 40,
-  },
-  rotatingRing: {
+  waveRing: {
     position: 'absolute',
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    padding: 3,
+    borderRadius: 999,
   },
-  ringGradient: {
-    flex: 1,
-    borderRadius: 80,
-    opacity: 0.3,
+  outerRing: {
+    width: 192,
+    height: 192,
   },
-  centerIcon: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    overflow: 'hidden',
+  middleRing: {
+    width: 144,
+    height: 144,
   },
-  iconGradient: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+  innerRing: {
+    width: 96,
+    height: 96,
   },
-  statusContainer: {
-    alignItems: 'center',
-    marginBottom: 24,
+  core: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    shadowColor: '#14B8A6',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  statusTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  stepIndicator: {
-    flexDirection: 'row',
+  textContainer: {
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(20, 184, 166, 0.1)',
-    borderRadius: 20,
   },
-  stepText: {
+  title: {
+    fontSize: 18,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  subtitle: {
     fontSize: 14,
+    textAlign: 'center',
   },
-  progressDots: {
+  dotsContainer: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 32,
+    marginTop: 32,
   },
   dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
   },
-  hintText: {
+  timeHint: {
     fontSize: 13,
     textAlign: 'center',
+    marginTop: 32,
   },
 });
-

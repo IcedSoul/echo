@@ -3,7 +3,7 @@
  * 提供与 AI 助手的对话交互
  */
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -25,6 +25,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
+import Markdown from 'react-native-markdown-display';
 import { useTheme } from '../contexts/ThemeContext';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { INPUT_CHAT_STYLE } from '../components/Input';
@@ -66,6 +67,208 @@ export const AIChatScreen: React.FC<Props> = ({ navigation, route }) => {
   const user = useAppSelector((state) => state.auth.user);
   const token = useAppSelector((state) => state.auth.token);
   
+  // Markdown 样式配置 - 用户消息（白色文字）
+  const userMarkdownStyles = useMemo(() => ({
+    body: {
+      color: '#FFF',
+      fontSize: 15,
+      lineHeight: 22,
+    },
+    paragraph: {
+      marginTop: 0,
+      marginBottom: 8,
+    },
+    strong: {
+      fontWeight: '700' as const,
+      color: '#FFF',
+    },
+    em: {
+      fontStyle: 'italic' as const,
+      color: '#FFF',
+    },
+    heading1: {
+      fontSize: 20,
+      fontWeight: '700' as const,
+      color: '#FFF',
+      marginBottom: 8,
+      marginTop: 4,
+    },
+    heading2: {
+      fontSize: 18,
+      fontWeight: '600' as const,
+      color: '#FFF',
+      marginBottom: 6,
+      marginTop: 4,
+    },
+    heading3: {
+      fontSize: 16,
+      fontWeight: '600' as const,
+      color: '#FFF',
+      marginBottom: 4,
+      marginTop: 4,
+    },
+    code_inline: {
+      backgroundColor: 'rgba(255,255,255,0.2)',
+      color: '#FFF',
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 4,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      fontSize: 13,
+    },
+    code_block: {
+      backgroundColor: 'rgba(255,255,255,0.15)',
+      color: '#FFF',
+      padding: 12,
+      borderRadius: 8,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      fontSize: 13,
+      marginVertical: 8,
+    },
+    fence: {
+      backgroundColor: 'rgba(255,255,255,0.15)',
+      color: '#FFF',
+      padding: 12,
+      borderRadius: 8,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      fontSize: 13,
+      marginVertical: 8,
+    },
+    blockquote: {
+      backgroundColor: 'rgba(255,255,255,0.1)',
+      borderLeftColor: 'rgba(255,255,255,0.5)',
+      borderLeftWidth: 4,
+      paddingLeft: 12,
+      paddingVertical: 4,
+      marginVertical: 8,
+    },
+    bullet_list: {
+      marginVertical: 4,
+    },
+    ordered_list: {
+      marginVertical: 4,
+    },
+    list_item: {
+      marginVertical: 2,
+    },
+    bullet_list_icon: {
+      color: '#FFF',
+    },
+    ordered_list_icon: {
+      color: '#FFF',
+    },
+    link: {
+      color: '#93C5FD',
+      textDecorationLine: 'underline' as const,
+    },
+    hr: {
+      backgroundColor: 'rgba(255,255,255,0.3)',
+      height: 1,
+      marginVertical: 12,
+    },
+  }), []);
+
+  // Markdown 样式配置 - AI 消息（主题颜色）
+  const aiMarkdownStyles = useMemo(() => ({
+    body: {
+      color: theme.colors.textPrimary,
+      fontSize: 15,
+      lineHeight: 22,
+    },
+    paragraph: {
+      marginTop: 0,
+      marginBottom: 8,
+    },
+    strong: {
+      fontWeight: '700' as const,
+      color: theme.colors.textPrimary,
+    },
+    em: {
+      fontStyle: 'italic' as const,
+      color: theme.colors.textPrimary,
+    },
+    heading1: {
+      fontSize: 20,
+      fontWeight: '700' as const,
+      color: theme.colors.textPrimary,
+      marginBottom: 8,
+      marginTop: 4,
+    },
+    heading2: {
+      fontSize: 18,
+      fontWeight: '600' as const,
+      color: theme.colors.textPrimary,
+      marginBottom: 6,
+      marginTop: 4,
+    },
+    heading3: {
+      fontSize: 16,
+      fontWeight: '600' as const,
+      color: theme.colors.textPrimary,
+      marginBottom: 4,
+      marginTop: 4,
+    },
+    code_inline: {
+      backgroundColor: theme.colors.background,
+      color: theme.colors.primary,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 4,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      fontSize: 13,
+    },
+    code_block: {
+      backgroundColor: theme.colors.background,
+      color: theme.colors.textPrimary,
+      padding: 12,
+      borderRadius: 8,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      fontSize: 13,
+      marginVertical: 8,
+    },
+    fence: {
+      backgroundColor: theme.colors.background,
+      color: theme.colors.textPrimary,
+      padding: 12,
+      borderRadius: 8,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+      fontSize: 13,
+      marginVertical: 8,
+    },
+    blockquote: {
+      backgroundColor: theme.colors.background,
+      borderLeftColor: theme.colors.primary,
+      borderLeftWidth: 4,
+      paddingLeft: 12,
+      paddingVertical: 4,
+      marginVertical: 8,
+    },
+    bullet_list: {
+      marginVertical: 4,
+    },
+    ordered_list: {
+      marginVertical: 4,
+    },
+    list_item: {
+      marginVertical: 2,
+    },
+    bullet_list_icon: {
+      color: theme.colors.textSecondary,
+    },
+    ordered_list_icon: {
+      color: theme.colors.textSecondary,
+    },
+    link: {
+      color: theme.colors.primary,
+      textDecorationLine: 'underline' as const,
+    },
+    hr: {
+      backgroundColor: theme.colors.border,
+      height: 1,
+      marginVertical: 12,
+    },
+  }), [theme]);
+
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -280,14 +483,11 @@ export const AIChatScreen: React.FC<Props> = ({ navigation, route }) => {
             />
           )}
           {item.content && item.content !== '[发送了一张图片]' && (
-            <Text
-              style={[
-                styles.messageText,
-                { color: isUser ? '#FFF' : theme.colors.textPrimary },
-              ]}
-            >
-              {item.content}
-            </Text>
+            <View style={styles.markdownContainer}>
+              <Markdown style={isUser ? userMarkdownStyles : aiMarkdownStyles}>
+                {item.content}
+              </Markdown>
+            </View>
           )}
         </View>
       </View>
@@ -398,7 +598,7 @@ export const AIChatScreen: React.FC<Props> = ({ navigation, route }) => {
           <View style={[styles.imagePreviewContainer, { backgroundColor: theme.colors.surface }]}>
             <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
             <TouchableOpacity style={styles.removeImageButton} onPress={handleRemoveImage}>
-              <Ionicons name="close-circle" size={24} color={theme.colors.error} />
+              <Ionicons name="close-circle" size={24} color={theme.colors.danger} />
             </TouchableOpacity>
           </View>
         )}
@@ -566,6 +766,11 @@ const styles = StyleSheet.create({
     height: 150,
     borderRadius: 12,
     marginBottom: 8,
+  },
+  markdownContainer: {
+    flexShrink: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
   },
   messageText: {
     fontSize: 15,

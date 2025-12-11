@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,6 +26,7 @@ import { showWarning, showError, showSuccess } from '../utils/toast';
 import { getCurrentUserId } from '../utils/storage';
 import { uploadChatScreenshots, ImageAsset } from '../api/ocr';
 import { checkInputQuality, QualityCheckResult } from '../utils/inputQualityCheck';
+import { useVoiceInput } from '../hooks/useVoiceInput';
 
 type AnalyzeInputScreenNavigationProp = StackNavigationProp<
   RootStackParamList,
@@ -44,11 +47,27 @@ export const AnalyzeInputScreen: React.FC<Props> = ({ navigation }) => {
   const [inputMode, setInputMode] = useState<InputMode>('text');
   const [conversationText, setConversationText] = useState('');
   const [contextDescription, setContextDescription] = useState('');
-  const [showExample, setShowExample] = useState(false);
   
   // 图片上传相关状态
   const [selectedImages, setSelectedImages] = useState<ImageAsset[]>([]);
   const [isProcessingOCR, setIsProcessingOCR] = useState(false);
+
+  // 示例弹窗状态
+  const [showExampleModal, setShowExampleModal] = useState(false);
+
+  // 语音输入
+  const handleVoiceText = useCallback((text: string) => {
+    setConversationText(prev => prev ? `${prev}\n${text}` : text);
+  }, []);
+
+  const {
+    isRecording,
+    isProcessing: isVoiceProcessing,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+    recordingDuration,
+  } = useVoiceInput({ onTextRecognized: handleVoiceText });
 
   const textLength = conversationText.length;
   const isTextValid = textLength >= 10 && textLength <= 5000;
@@ -177,6 +196,13 @@ export const AnalyzeInputScreen: React.FC<Props> = ({ navigation }) => {
     });
   };
 
+  // 格式化录音时长
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const exampleText = `我：你今天怎么又加班到这么晚？饭都凉了。
 对方：公司有个紧急项目，我也没办法啊。
 我：你总是把工作放在第一位，家里的事你什么时候上过心？
@@ -250,9 +276,21 @@ export const AnalyzeInputScreen: React.FC<Props> = ({ navigation }) => {
           {/* 文本输入模式 */}
           {inputMode === 'text' && (
             <View style={styles.inputSection}>
-              <Text style={[styles.label, { color: theme.colors.textMuted }]}>
-                对话记录
-              </Text>
+              <View style={styles.labelRow}>
+                <Text style={[styles.label, { color: theme.colors.textMuted }]}>
+                  对话记录
+                </Text>
+                <TouchableOpacity
+                  style={[styles.exampleButton, { backgroundColor: theme.colors.primaryAlpha10 }]}
+                  onPress={() => setShowExampleModal(true)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="bulb-outline" size={14} color={theme.colors.primary} />
+                  <Text style={[styles.exampleButtonText, { color: theme.colors.primary }]}>
+                    查看示例
+                  </Text>
+                </TouchableOpacity>
+              </View>
               <View style={[styles.textAreaContainer, { backgroundColor: theme.colors.surface }]}>
                 <TextInput
                   style={[
@@ -328,6 +366,50 @@ export const AnalyzeInputScreen: React.FC<Props> = ({ navigation }) => {
                   </Text>
                 </View>
               )}
+
+              {/* 语音输入按钮 */}
+              <View style={styles.voiceInputRow}>
+                {isRecording ? (
+                  <View style={styles.recordingContainer}>
+                    <View style={[styles.recordingIndicator, { backgroundColor: theme.colors.danger }]}>
+                      <View style={styles.recordingPulse} />
+                    </View>
+                    <Text style={[styles.recordingText, { color: theme.colors.textPrimary }]}>
+                      录音中 {formatDuration(recordingDuration)}
+                    </Text>
+                    <TouchableOpacity
+                      style={[styles.recordingButton, { backgroundColor: theme.colors.danger }]}
+                      onPress={stopRecording}
+                    >
+                      <Ionicons name="stop" size={20} color="#FFF" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.cancelButton, { backgroundColor: theme.colors.surface }]}
+                      onPress={cancelRecording}
+                    >
+                      <Ionicons name="close" size={18} color={theme.colors.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+                ) : isVoiceProcessing ? (
+                  <View style={styles.processingContainer}>
+                    <ActivityIndicator size="small" color={theme.colors.primary} />
+                    <Text style={[styles.processingText, { color: theme.colors.textSecondary }]}>
+                      正在识别...
+                    </Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.voiceButton, { backgroundColor: theme.colors.primaryAlpha10 }]}
+                    onPress={startRecording}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="mic-outline" size={20} color={theme.colors.primary} />
+                    <Text style={[styles.voiceButtonText, { color: theme.colors.primary }]}>
+                      语音输入
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           )}
 
@@ -447,52 +529,14 @@ export const AnalyzeInputScreen: React.FC<Props> = ({ navigation }) => {
             </View>
           </View>
 
-          {/* Example Section - 仅在文本模式显示 */}
-          {inputMode === 'text' && (
-            <View style={styles.exampleSection}>
-              <TouchableOpacity
-                onPress={() => setShowExample(!showExample)}
-                activeOpacity={0.7}
-                style={[styles.exampleToggle, { backgroundColor: theme.colors.surface }]}
-              >
-                <Text style={[styles.exampleToggleText, { color: theme.colors.textSecondary }]}>
-                  {showExample ? '隐藏示例' : '查看示例'}
-                </Text>
-                <Ionicons
-                  name={showExample ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color={theme.colors.textSecondary}
-                />
-              </TouchableOpacity>
-              {showExample && (
-                <View style={[styles.exampleContent, { backgroundColor: theme.colors.surface }]}>
-                  <Text style={[styles.exampleLabel, { color: theme.colors.textSecondary }]}>
-                    示例对话：
-                  </Text>
-                  <Text style={[styles.exampleText, { color: theme.colors.textPrimary }]}>
-                    {exampleText}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setConversationText(exampleText);
-                      setContextDescription('伴侣经常加班，今晚又很晚才回家，我一直在等他吃饭。');
-                      setShowExample(false);
-                    }}
-                    activeOpacity={0.8}
-                    style={[styles.useExampleButton, { backgroundColor: theme.colors.primaryAlpha10 }]}
-                  >
-                    <Text style={[styles.useExampleText, { color: theme.colors.primary }]}>
-                      使用此示例
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          )}
         </ScrollView>
 
         {/* Bottom Action */}
         <View style={[styles.bottomAction, { backgroundColor: theme.colors.background }]}>
+          {/* Disclaimer - 统一放在按钮上方 */}
+          <Text style={[styles.disclaimer, { color: theme.colors.textTertiary }]}>
+            💡 Wavecho 是基于AI的沟通辅助工具，不能替代专业心理咨询。
+          </Text>
           <TouchableOpacity
             onPress={handleSubmit}
             activeOpacity={0.8}
@@ -525,13 +569,74 @@ export const AnalyzeInputScreen: React.FC<Props> = ({ navigation }) => {
               </Text>
             </LinearGradient>
           </TouchableOpacity>
-
-          {/* Disclaimer */}
-          <Text style={[styles.disclaimer, { color: theme.colors.textTertiary }]}>
-            💡 Wavecho 是基于AI的沟通辅助工具，不能替代专业心理咨询。
-          </Text>
         </View>
       </KeyboardAvoidingView>
+
+      {/* 示例弹窗 */}
+      <Modal
+        visible={showExampleModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowExampleModal(false)}
+      >
+        <Pressable 
+          style={styles.modalOverlay} 
+          onPress={() => setShowExampleModal(false)}
+        >
+          <Pressable 
+            style={[styles.modalContent, { backgroundColor: theme.colors.surface }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
+                💬 对话示例
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowExampleModal(false)}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={22} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              <Text style={[styles.modalSubtitle, { color: theme.colors.textSecondary }]}>
+                情侣/夫妻沟通冲突示例：
+              </Text>
+              <View style={[styles.exampleBox, { backgroundColor: theme.colors.background }]}>
+                <Text style={[styles.exampleText, { color: theme.colors.textPrimary }]}>
+                  {exampleText}
+                </Text>
+              </View>
+              
+              <Text style={[styles.contextLabel, { color: theme.colors.textSecondary }]}>
+                背景说明示例：
+              </Text>
+              <View style={[styles.contextBox, { backgroundColor: theme.colors.background }]}>
+                <Text style={[styles.contextExampleText, { color: theme.colors.textPrimary }]}>
+                  伴侣经常加班，今晚又很晚才回家，我一直在等他吃饭。
+                </Text>
+              </View>
+            </ScrollView>
+            
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.useExampleButton, { backgroundColor: theme.colors.primaryAlpha10 }]}
+                onPress={() => {
+                  setConversationText(exampleText);
+                  setContextDescription('伴侣经常加班，今晚又很晚才回家，我一直在等他吃饭。');
+                  setShowExampleModal(false);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.useExampleText, { color: theme.colors.primary }]}>
+                  使用此示例
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ScreenContainer>
   );
 };
@@ -566,10 +671,27 @@ const styles = StyleSheet.create({
   inputSection: {
     marginBottom: 16,
   },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
   label: {
     fontSize: 14,
     fontWeight: '500',
-    marginBottom: 8,
+  },
+  exampleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    gap: 4,
+  },
+  exampleButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   hint: {
     fontSize: 12,
@@ -645,6 +767,69 @@ const styles = StyleSheet.create({
   qualityGoodText: {
     fontSize: 13,
     flex: 1,
+  },
+  // 语音输入样式
+  voiceInputRow: {
+    marginTop: 12,
+  },
+  voiceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 8,
+  },
+  voiceButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  recordingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 12,
+  },
+  recordingIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  recordingPulse: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+  },
+  recordingText: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  recordingButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  processingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 8,
+  },
+  processingText: {
+    fontSize: 14,
   },
   contextContainer: {
     borderRadius: 10,
@@ -731,46 +916,79 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  exampleSection: {
-    marginBottom: 16,
+  // 弹窗样式
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  exampleToggle: {
+  modalContent: {
+    width: '100%',
+    maxHeight: '80%',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 10,
-    gap: 6,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
   },
-  exampleToggleText: {
-    fontSize: 14,
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
   },
-  exampleContent: {
-    marginTop: 8,
-    borderRadius: 10,
-    padding: 16,
+  modalCloseButton: {
+    padding: 4,
   },
-  exampleLabel: {
+  modalScroll: {
+    paddingHorizontal: 20,
+  },
+  modalSubtitle: {
     fontSize: 13,
-    marginBottom: 8,
+    marginBottom: 10,
+  },
+  exampleBox: {
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 16,
   },
   exampleText: {
     fontSize: 13,
     lineHeight: 20,
-    marginBottom: 12,
+  },
+  contextLabel: {
+    fontSize: 13,
+    marginBottom: 10,
+  },
+  contextBox: {
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 8,
+  },
+  contextExampleText: {
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  modalActions: {
+    padding: 20,
   },
   useExampleButton: {
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: 12,
+    borderRadius: 10,
     alignItems: 'center',
   },
   useExampleText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   bottomAction: {
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: 12,
     paddingBottom: 32,
   },
   gradientButtonWrapper: {
@@ -796,6 +1014,6 @@ const styles = StyleSheet.create({
   disclaimer: {
     fontSize: 12,
     textAlign: 'center',
-    marginTop: 16,
+    marginBottom: 12,
   },
 });

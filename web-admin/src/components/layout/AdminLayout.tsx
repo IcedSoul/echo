@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, Settings, FileText, LogOut, Menu, X } from 'lucide-react'
+import { LayoutDashboard, Users, Settings, FileText, LogOut, Menu, X, MessageSquare } from 'lucide-react'
 import { useState } from 'react'
 
 export default function AdminLayout() {
@@ -19,6 +19,7 @@ export default function AdminLayout() {
     { path: '/users', icon: Users, label: '用户管理' },
     { path: '/limits', icon: Settings, label: '限额管理' },
     { path: '/sessions', icon: FileText, label: '会话记录' },
+    { path: '/feedbacks', icon: MessageSquare, label: '用户反馈' },
   ]
 
   return (

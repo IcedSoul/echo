@@ -4,10 +4,15 @@ import apiClient from '../lib/api-client'
 import type { UsageLimit } from '../types'
 import { formatDate } from '../lib/utils'
 import { RefreshCw, Edit } from 'lucide-react'
+import EditLimitDialog, { LimitFormData } from '../components/EditLimitDialog'
+import { useToast } from '../components/Toast'
 
 export default function UsageLimitsPage() {
   const [page, setPage] = useState(1)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingLimit, setEditingLimit] = useState<UsageLimit | null>(null)
   const queryClient = useQueryClient()
+  const toast = useToast()
 
   const { data: limits, isLoading } = useQuery({
     queryKey: ['usage-limits', page],
@@ -25,13 +30,42 @@ export default function UsageLimitsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['usage-limits'] })
-      alert('使用次数已重置')
+      toast.success('重置成功', '使用次数已重置')
+    },
+    onError: (error: any) => {
+      toast.error('重置失败', error.response?.data?.error?.message || '重置使用次数失败')
+    },
+  })
+
+  const updateLimit = useMutation({
+    mutationFn: async ({ userId, data }: { userId: string; data: LimitFormData }) => {
+      await apiClient.put(`/admin/usage-limits/${userId}`, data)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['usage-limits'] })
+      toast.success('更新成功', '限额已更新')
+      setDialogOpen(false)
+      setEditingLimit(null)
+    },
+    onError: (error: any) => {
+      toast.error('更新失败', error.response?.data?.error?.message || '更新限额失败')
     },
   })
 
   const handleReset = (userId: string) => {
     if (confirm('确定要重置该用户的使用次数吗？')) {
       resetUsage.mutate(userId)
+    }
+  }
+
+  const handleEdit = (limit: UsageLimit) => {
+    setEditingLimit(limit)
+    setDialogOpen(true)
+  }
+
+  const handleSubmitLimit = (data: LimitFormData) => {
+    if (editingLimit) {
+      updateLimit.mutate({ userId: editingLimit.user_id, data })
     }
   }
 
@@ -65,7 +99,12 @@ export default function UsageLimitsPage() {
                     <td className="px-4 py-3">
                       <div>
                         <div className="font-medium">{limit.user_nickname || '未命名'}</div>
-                        <div className="text-xs text-gray-500 font-mono">{limit.user_id.slice(0, 8)}...</div>
+                        <span
+                          className="text-xs text-gray-500 font-mono cursor-help"
+                          title={limit.user_id}
+                        >
+                          {limit.user_id}
+                        </span>
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -107,7 +146,11 @@ export default function UsageLimitsPage() {
                         >
                           <RefreshCw size={16} />
                         </button>
-                        <button className="p-1 hover:bg-gray-100 rounded" title="编辑限额">
+                        <button
+                          onClick={() => handleEdit(limit)}
+                          className="p-1 hover:bg-gray-100 rounded"
+                          title="编辑限额"
+                        >
                           <Edit size={16} />
                         </button>
                       </div>
@@ -141,6 +184,28 @@ export default function UsageLimitsPage() {
           </div>
         </div>
       </div>
+
+      {/* 编辑限额对话框 */}
+      <EditLimitDialog
+        open={dialogOpen}
+        onClose={() => {
+          setDialogOpen(false)
+          setEditingLimit(null)
+        }}
+        onSubmit={handleSubmitLimit}
+        initialData={
+          editingLimit
+            ? {
+                conflict_analysis_limit: editingLimit.limits.conflict_analysis_limit,
+                situation_judge_limit: editingLimit.limits.situation_judge_limit,
+                expression_helper_limit: editingLimit.limits.expression_helper_limit,
+                ai_chat_limit: editingLimit.limits.ai_chat_limit,
+              }
+            : undefined
+        }
+        userNickname={editingLimit?.user_nickname}
+        loading={updateLimit.isPending}
+      />
     </div>
   )
 }

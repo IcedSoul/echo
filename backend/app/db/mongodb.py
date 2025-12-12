@@ -121,7 +121,15 @@ class MongoDB:
             await usage_limits.create_index("user_id", unique=True)
             await usage_limits.create_index("user_level")
             logger.info("✓ user_usage_limits 集合索引创建完成")
-            
+
+            # feedbacks 集合索引
+            feedbacks = cls.get_collection("feedbacks")
+            await feedbacks.create_index("feedback_id", unique=True)
+            await feedbacks.create_index([("user_id", 1), ("created_at", -1)])
+            await feedbacks.create_index("status")
+            await feedbacks.create_index("created_at")
+            logger.info("✓ feedbacks 集合索引创建完成")
+
             logger.info("所有数据库索引创建完成")
             
         except Exception as e:
@@ -145,3 +153,8 @@ async def get_sessions_collection() -> AsyncIOMotorCollection:
 async def get_verification_codes_collection() -> AsyncIOMotorCollection:
     """获取 verification_codes 集合"""
     return MongoDB.get_collection("verification_codes")
+
+
+async def get_feedbacks_collection() -> AsyncIOMotorCollection:
+    """获取 feedbacks 集合"""
+    return MongoDB.get_collection("feedbacks")

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import apiClient from '../lib/api-client'
 import type { LoginResponse } from '../types'
 import { Mail, Phone, Lock, Send } from 'lucide-react'
+import { useToast } from '../components/Toast'
 
 export default function LoginPage() {
   const [account, setAccount] = useState('')
@@ -13,6 +14,7 @@ export default function LoginPage() {
   const [codeSent, setCodeSent] = useState(false)
   const [countdown, setCountdown] = useState(0)
   const navigate = useNavigate()
+  const toast = useToast()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -35,13 +37,17 @@ export default function LoginPage() {
 
       localStorage.setItem('admin_token', access_token)
 
+      toast.success('登录成功', '正在跳转到管理后台...')
+
       // 延迟跳转以确保状态更新
       setTimeout(() => {
         navigate('/', { replace: true })
         window.location.reload() // 强制刷新以更新认证状态
       }, 100)
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || '登录失败，请重试')
+      const errorMsg = err.response?.data?.error?.message || '登录失败，请重试'
+      setError(errorMsg)
+      toast.error('登录失败', errorMsg)
       setLoading(false)
     }
   }
@@ -59,6 +65,7 @@ export default function LoginPage() {
       await apiClient.post('/auth/send-code', { account })
       setCodeSent(true)
       setCountdown(60)
+      toast.success('验证码已发送', '请查收您的邮箱或手机短信')
 
       // 倒计时
       const timer = setInterval(() => {
@@ -71,7 +78,9 @@ export default function LoginPage() {
         })
       }, 1000)
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || '发送验证码失败')
+      const errorMsg = err.response?.data?.error?.message || '发送验证码失败'
+      setError(errorMsg)
+      toast.error('发送失败', errorMsg)
     } finally {
       setSendingCode(false)
     }

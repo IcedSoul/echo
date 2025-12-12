@@ -82,4 +82,19 @@ export interface LoginResponse {
   role: 'user' | 'admin'
 }
 
+export interface Feedback {
+  feedback_id: string
+  user_id: string
+  content: string
+  contact?: string
+  status: 'pending' | 'read' | 'replied'
+  created_at: string
+}
+
+export interface FeedbackListResponse {
+  feedbacks: Feedback[]
+  total: number
+  page: number
+  page_size: number
+}
 

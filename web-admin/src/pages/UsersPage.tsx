@@ -5,6 +5,7 @@ import type { UserListResponse, User } from '../types'
 import { formatDate } from '../lib/utils'
 import { Search, Plus, Edit, Trash2, UserCircle } from 'lucide-react'
 import UserDialog, { UserFormData } from '../components/UserDialog'
+import { useToast } from '../components/Toast'
 
 export default function UsersPage() {
   const [page, setPage] = useState(1)
@@ -12,6 +13,7 @@ export default function UsersPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const queryClient = useQueryClient()
+  const toast = useToast()
 
   const { data, isLoading } = useQuery({
     queryKey: ['users', page, search],
@@ -29,6 +31,10 @@ export default function UsersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
+      toast.success('创建成功', '用户已成功创建')
+    },
+    onError: (error: any) => {
+      toast.error('创建失败', error.response?.data?.error?.message || '创建用户失败')
     },
   })
 
@@ -38,6 +44,10 @@ export default function UsersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
+      toast.success('更新成功', '用户信息已更新')
+    },
+    onError: (error: any) => {
+      toast.error('更新失败', error.response?.data?.error?.message || '更新用户失败')
     },
   })
 
@@ -47,6 +57,10 @@ export default function UsersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
+      toast.success('删除成功', '用户已被删除')
+    },
+    onError: (error: any) => {
+      toast.error('删除失败', error.response?.data?.error?.message || '删除用户失败')
     },
   })
 
@@ -151,8 +165,13 @@ export default function UsersPage() {
                 <tbody className="divide-y divide-gray-200">
                   {data?.items.map((user) => (
                     <tr key={user.user_id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 text-sm font-mono text-gray-900">
-                        {user.user_id.slice(0, 8)}...
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span
+                          className="text-xs font-mono text-gray-600 cursor-help"
+                          title={user.user_id}
+                        >
+                          {user.user_id}
+                        </span>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">

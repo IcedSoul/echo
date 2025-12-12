@@ -15,6 +15,8 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { RootStackParamList } from '../types';
 import { Ionicons } from '@expo/vector-icons';
 import { showSuccess, showError } from '../utils/toast';
+import { useAppSelector } from '../store/hooks';
+import { submitFeedback } from '../api/feedback';
 
 type HelpFeedbackScreenNavigationProp = StackNavigationProp<
   RootStackParamList,
@@ -33,7 +35,9 @@ interface FAQ {
 
 export const HelpFeedbackScreen: React.FC<Props> = ({ navigation }) => {
   const { theme } = useTheme();
+  const token = useAppSelector((state) => state.auth.token);
   const [feedback, setFeedback] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [faqs, setFaqs] = useState<FAQ[]>([
     {
       question: 'Wavecho 如何分析我的对话？',
@@ -75,32 +79,48 @@ export const HelpFeedbackScreen: React.FC<Props> = ({ navigation }) => {
     );
   };
 
-  const handleSubmitFeedback = () => {
+  const handleSubmitFeedback = async () => {
     if (!feedback.trim()) {
       showError({ title: '提示', message: '请输入您的反馈内容' });
       return;
     }
-    // 这里可以调用 API 提交反馈
-    showSuccess({ title: '感谢反馈', message: '我们已收到您的反馈，会认真阅读并持续改进' });
-    setFeedback('');
+
+    if (!token) {
+      showError({ title: '提示', message: '请先登录' });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await submitFeedback(
+        {
+          content: feedback.trim(),
+        },
+        token
+      );
+      showSuccess({ title: '感谢反馈', message: '我们已收到您的反馈，会认真阅读并持续改进' });
+      setFeedback('');
+    } catch (error: any) {
+      console.error('Submit feedback failed:', error);
+      showError({
+        title: '提交失败',
+        message: error.message || '提交反馈失败，请稍后重试'
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleContactEmail = () => {
-    Linking.openURL('mailto:support@wavecho.app?subject=Wavecho反馈');
+    Linking.openURL('mailto:xfguo20@gmail.com?subject=Wavecho反馈');
   };
 
   const contactMethods = [
     {
       icon: 'mail' as const,
       title: '邮件联系',
-      subtitle: 'support@wavecho.app',
+      subtitle: 'xfguo20@gmail.com',
       onPress: handleContactEmail,
-    },
-    {
-      icon: 'logo-github' as const,
-      title: 'GitHub',
-      subtitle: '查看项目源码和提交 Issue',
-      onPress: () => Linking.openURL('https://github.com/wavecho'),
     },
   ];
 
@@ -182,12 +202,27 @@ export const HelpFeedbackScreen: React.FC<Props> = ({ navigation }) => {
             <TouchableOpacity
               onPress={handleSubmitFeedback}
               activeOpacity={0.8}
-              style={[styles.submitButton, { backgroundColor: theme.colors.primary }]}
+              disabled={submitting}
+              style={[
+                styles.submitButton,
+                { backgroundColor: theme.colors.primary },
+                submitting && { opacity: 0.6 }
+              ]}
             >
-              <Ionicons name="send" size={16} color={theme.colors.textWhite} />
-              <Text style={[styles.submitButtonText, { color: theme.colors.textWhite }]}>
-                提交反馈
-              </Text>
+              {submitting ? (
+                <>
+                  <Text style={[styles.submitButtonText, { color: theme.colors.textWhite }]}>
+                    提交中...
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="send" size={16} color={theme.colors.textWhite} />
+                  <Text style={[styles.submitButtonText, { color: theme.colors.textWhite }]}>
+                    提交反馈
+                  </Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>

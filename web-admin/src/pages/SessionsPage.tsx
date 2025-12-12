@@ -69,11 +69,23 @@ export default function SessionsPage() {
               <tbody>
                 {data?.items.map((session) => (
                   <tr key={session.session_id} className="border-t hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm font-mono">{session.session_id.slice(0, 12)}...</td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span
+                        className="text-xs font-mono text-gray-600 cursor-help"
+                        title={session.session_id}
+                      >
+                        {session.session_id}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">
                       <div>
                         <div className="text-sm">{session.user_nickname || '未命名'}</div>
-                        <div className="text-xs text-gray-500 font-mono">{session.user_id.slice(0, 8)}...</div>
+                        <span
+                          className="text-xs text-gray-500 font-mono cursor-help"
+                          title={session.user_id}
+                        >
+                          {session.user_id}
+                        </span>
                       </div>
                     </td>
                     <td className="px-4 py-3">

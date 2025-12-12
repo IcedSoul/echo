@@ -5,6 +5,7 @@ import OverviewPage from './pages/OverviewPage'
 import UsersPage from './pages/UsersPage'
 import UsageLimitsPage from './pages/UsageLimitsPage'
 import SessionsPage from './pages/SessionsPage'
+import FeedbacksPage from './pages/FeedbacksPage'
 
 function App() {
   const isAuthenticated = !!localStorage.getItem('admin_token')
@@ -27,6 +28,7 @@ function App() {
         <Route path="users" element={<UsersPage />} />
         <Route path="limits" element={<UsageLimitsPage />} />
         <Route path="sessions" element={<SessionsPage />} />
+        <Route path="feedbacks" element={<FeedbacksPage />} />
       </Route>
     </Routes>
   )

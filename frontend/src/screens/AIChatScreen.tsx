@@ -31,8 +31,9 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { INPUT_CHAT_STYLE } from '../components/Input';
 import { RootStackParamList } from '../types';
 import { useAppSelector } from '../store/hooks';
-import { 
-  sendMessage as sendChatMessage, 
+import {
+  sendMessage as sendChatMessage,
+  sendMessageStream,
   getSessionMessages,
   ChatMessage as APIChatMessage,
 } from '../api/chat';
@@ -381,7 +382,7 @@ export const AIChatScreen: React.FC<Props> = ({ navigation, route }) => {
 
     const messageText = inputText.trim();
     const imageUri = selectedImage;
-    
+
     setInputText('');
     setSelectedImage(null);
 
@@ -404,37 +405,125 @@ export const AIChatScreen: React.FC<Props> = ({ navigation, route }) => {
       let imageBase64: string | undefined;
       if (imageUri) {
         const base64 = await FileSystem.readAsStringAsync(imageUri, {
-          encoding: FileSystem.EncodingType.Base64,
+          encoding: 'base64',
         });
         imageBase64 = base64;
       }
 
-      const response = await sendChatMessage({
-        session_id: sessionId || undefined,
-        message: messageText || '请帮我分析这张图片',
-        user_id: user.userId,
-        image_base64: imageBase64,
-      }, token || undefined);
+      // AI 消息 ID，用于流式更新
+      const aiMessageId = `ai-${Date.now()}`;
+      let aiMessageCreated = false;
+      let accumulatedContent = ''; // 累积内容
+      let updateTimer: NodeJS.Timeout | null = null;
 
-      if (!sessionId) {
-        setSessionId(response.session_id);
-      }
-
-      const aiMessage: ChatMessage = {
-        id: `ai-${Date.now()}`,
-        role: 'assistant',
-        content: response.reply.content,
-        timestamp: new Date(),
+      // 批量更新函数 - 减少渲染频率
+      const batchUpdate = () => {
+        if (accumulatedContent) {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === aiMessageId
+                ? { ...msg, content: accumulatedContent }
+                : msg
+            )
+          );
+        }
       };
-      
-      setMessages((prev) => [...prev, aiMessage]);
-      
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+
+      // 使用流式 API
+      await sendMessageStream(
+        {
+          session_id: sessionId || undefined,
+          message: messageText || '请帮我分析这张图片',
+          user_id: user.userId,
+          image_base64: imageBase64,
+        },
+        {
+          onSessionId: (newSessionId) => {
+            if (!sessionId) {
+              setSessionId(newSessionId);
+            }
+          },
+          onContent: (content) => {
+            // 累积内容
+            accumulatedContent += content;
+
+            // 收到第一个内容片段时创建 AI 消息并隐藏 loading
+            if (!aiMessageCreated) {
+              const aiMessage: ChatMessage = {
+                id: aiMessageId,
+                role: 'assistant',
+                content: accumulatedContent,
+                timestamp: new Date(),
+              };
+              setMessages((prev) => [...prev, aiMessage]);
+              setIsLoading(false); // 立即隐藏 typing indicator
+              aiMessageCreated = true;
+
+              // 首次滚动
+              setTimeout(() => {
+                flatListRef.current?.scrollToEnd({ animated: false });
+              }, 50);
+            } else {
+              // 使用节流更新 - 每 50ms 更新一次
+              if (updateTimer) {
+                clearTimeout(updateTimer);
+              }
+              updateTimer = setTimeout(() => {
+                batchUpdate();
+                // 定期滚动到底部
+                flatListRef.current?.scrollToEnd({ animated: false });
+              }, 50);
+            }
+          },
+          onDone: (sid, timestamp) => {
+            // 清除定时器并执行最后一次更新
+            if (updateTimer) {
+              clearTimeout(updateTimer);
+            }
+            batchUpdate();
+            setIsLoading(false);
+            console.log('Stream completed:', sid, timestamp);
+
+            // 最后滚动到底部
+            setTimeout(() => {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }, 100);
+          },
+          onError: (error) => {
+            console.error('Stream error:', error);
+            if (updateTimer) {
+              clearTimeout(updateTimer);
+            }
+            setIsLoading(false);
+
+            // 如果还没创建消息，则创建错误消息
+            if (!aiMessageCreated) {
+              const errorMessage: ChatMessage = {
+                id: aiMessageId,
+                role: 'assistant',
+                content: '抱歉，发送消息时遇到问题，请稍后重试。',
+                timestamp: new Date(),
+              };
+              setMessages((prev) => [...prev, errorMessage]);
+            } else {
+              // 如果已创建消息，则更新内容
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === aiMessageId
+                    ? { ...msg, content: '抱歉，发送消息时遇到问题，请稍后重试。' }
+                    : msg
+                )
+              );
+            }
+          },
+        },
+        token || undefined
+      );
     } catch (error) {
       console.error('Failed to send message:', error);
-      
+      setIsLoading(false);
+
+      // 添加错误消息
       const errorMessage: ChatMessage = {
         id: `error-${Date.now()}`,
         role: 'assistant',
@@ -442,8 +531,6 @@ export const AIChatScreen: React.FC<Props> = ({ navigation, route }) => {
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
     }
   }, [inputText, selectedImage, isLoading, user?.userId, sessionId, token]);
 
@@ -588,8 +675,12 @@ export const AIChatScreen: React.FC<Props> = ({ navigation, route }) => {
           showsVerticalScrollIndicator={false}
           ListFooterComponent={renderTypingIndicator}
           keyboardShouldPersistTaps="handled"
-          onContentSizeChange={() => {
-            flatListRef.current?.scrollToEnd({ animated: true });
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={10}
+          updateCellsBatchingPeriod={50}
+          windowSize={10}
+          maintainVisibleContentPosition={{
+            minIndexForVisible: 0,
           }}
         />
 

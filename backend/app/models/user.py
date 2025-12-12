@@ -42,7 +42,9 @@ class UserBase(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     nickname: Optional[str] = None
+    avatar: Optional[str] = None  # 用户头像（base64 或 URL）
     is_anonymous: bool = False
+    role: Literal["user", "admin"] = "user"  # 用户角色：普通用户或管理员
 
 
 class UserCreate(UserBase):
@@ -55,6 +57,7 @@ class UserInDB(UserBase):
     user_id: str
     email_verified: bool = False
     phone_verified: bool = False
+    role: Literal["user", "admin"] = "user"
     created_at: datetime
     updated_at: datetime
     last_login_at: Optional[datetime] = None
@@ -69,9 +72,11 @@ class UserResponse(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     nickname: Optional[str] = None
+    avatar: Optional[str] = None
     is_anonymous: bool
+    role: Literal["user", "admin"] = "user"
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -79,6 +84,7 @@ class UserResponse(BaseModel):
 class UserUpdateRequest(BaseModel):
     """更新用户信息请求"""
     nickname: Optional[str] = Field(None, min_length=1, max_length=20)
+    avatar: Optional[str] = Field(None, description="用户头像（base64 编码的图片数据）")
 
 
 class Token(BaseModel):
@@ -91,6 +97,8 @@ class Token(BaseModel):
     nickname: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    avatar: Optional[str] = None
+    role: Literal["user", "admin"] = "user"
 
 
 class TokenRefreshResponse(BaseModel):
@@ -101,6 +109,8 @@ class TokenRefreshResponse(BaseModel):
     nickname: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    avatar: Optional[str] = None
+    role: Literal["user", "admin"] = "user"
 
 
 class VerificationCodeRequest(BaseModel):

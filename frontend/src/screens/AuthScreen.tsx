@@ -92,6 +92,7 @@ export const AuthScreen: React.FC<Props> = ({ navigation }) => {
         email: response.email,
         phone: response.phone,
         nickname: response.nickname,
+        avatar: response.avatar,
         isAnonymous: false,
         createdAt: new Date().toISOString(),
       };

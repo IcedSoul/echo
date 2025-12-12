@@ -18,6 +18,7 @@ from app.services.response_guard import response_guard
 from app.prompts import standard, cautious, high_risk
 from app.core.security import encrypt_text
 from app.db.mongodb import get_sessions_collection
+from app.services.usage_limit_service import usage_limit_service
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +54,44 @@ class AnalysisOrchestrator:
         )
         
         try:
-            # ========== 1. 创建会话记录 ==========
+            # ========== 1. 检查使用限制 ==========
+            usage_check = await usage_limit_service.check_usage_limit(
+                request.user_id,
+                "conflict_analysis"
+            )
+            
+            if not usage_check.allowed:
+                logger.warning(
+                    f"使用次数超限 - UserID: {request.user_id}, "
+                    f"Feature: conflict_analysis"
+                )
+                # 抛出异常，由上层处理
+                from fastapi import HTTPException, status
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "error": {
+                            "code": "USAGE_LIMIT_EXCEEDED",
+                            "message": usage_check.message,
+                            "details": {
+                                "feature": "conflict_analysis",
+                                "used": usage_check.used,
+                                "limit": usage_check.limit
+                            }
+                        }
+                    }
+                )
+            
+            # ========== 2. 创建会话记录 ==========
             await self._create_session_record(session_id, request)
             
-            # ========== 2. 风险分类 ==========
+            # ========== 3. 增加使用次数 ==========
+            await usage_limit_service.increment_usage(
+                request.user_id,
+                "conflict_analysis"
+            )
+            
+            # ========== 4. 风险分类 ==========
             risk_classification = risk_classifier.classify(
                 request.conversation_text
             )
@@ -67,14 +102,14 @@ class AnalysisOrchestrator:
                 f"Tags: {risk_classification.tags}"
             )
             
-            # ========== 3. 选择 Prompt 模板 ==========
+            # ========== 5. 选择 Prompt 模板 ==========
             prompt, system_message = self._select_prompt(
                 risk_classification.risk_level,
                 request.conversation_text,
                 request.context_description or ""
             )
             
-            # ========== 4. 调用 LLM 生成 ==========
+            # ========== 6. 调用 LLM 生成 ==========
             try:
                 llm_result = await llm_client.generate_with_metadata(
                     prompt=prompt,
@@ -110,7 +145,7 @@ class AnalysisOrchestrator:
                     datetime.utcnow()
                 )
             
-            # ========== 5. 解析 LLM 输出 ==========
+            # ========== 7. 解析 LLM 输出 ==========
             try:
                 parsed_result = parse_llm_json(llm_content)
             except ValueError as e:
@@ -136,7 +171,7 @@ class AnalysisOrchestrator:
                     datetime.utcnow()
                 )
             
-            # ========== 6. 安全审查 ==========
+            # ========== 8. 安全审查 ==========
             validation_result = response_guard.validate(
                 parsed_result,
                 risk_classification.risk_level
@@ -166,7 +201,7 @@ class AnalysisOrchestrator:
                 # 通过：使用原始结果
                 analysis_result = parsed_result
             
-            # ========== 7. 更新会话记录为完成状态 ==========
+            # ========== 9. 更新会话记录为完成状态 ==========
             completed_at = datetime.utcnow()
             
             await self._update_session_completed(
@@ -178,7 +213,7 @@ class AnalysisOrchestrator:
             
             logger.info(f"分析完成 - SessionID: {session_id}")
             
-            # ========== 8. 返回结果 ==========
+            # ========== 10. 返回结果 ==========
             return self._build_response(
                 session_id,
                 risk_classification.risk_level,

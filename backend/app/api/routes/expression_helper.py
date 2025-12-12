@@ -18,6 +18,7 @@ from app.prompts.expression_helper import (
 )
 from app.db.mongodb import get_sessions_collection
 from app.core.security import encrypt_text
+from app.services.usage_limit_service import usage_limit_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -67,6 +68,32 @@ async def generate_expressions(request: ExpressionHelperRequest):
             f"TextLength: {len(request.original_message)}"
         )
         
+        # 检查使用限制
+        usage_check = await usage_limit_service.check_usage_limit(
+            request.user_id,
+            "expression_helper"
+        )
+        
+        if not usage_check.allowed:
+            logger.warning(
+                f"使用次数超限 - UserID: {request.user_id}, "
+                f"Feature: expression_helper"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error": {
+                        "code": "USAGE_LIMIT_EXCEEDED",
+                        "message": usage_check.message,
+                        "details": {
+                            "feature": "expression_helper",
+                            "used": usage_check.used,
+                            "limit": usage_check.limit
+                        }
+                    }
+                }
+            )
+        
         # 创建会话记录
         sessions = await get_sessions_collection()
         session_doc = {
@@ -79,6 +106,12 @@ async def generate_expressions(request: ExpressionHelperRequest):
             "created_at": datetime.utcnow()
         }
         await sessions.insert_one(session_doc)
+        
+        # 增加使用次数
+        await usage_limit_service.increment_usage(
+            request.user_id,
+            "expression_helper"
+        )
         
         # 生成 Prompt
         prompt = get_expression_helper_prompt(

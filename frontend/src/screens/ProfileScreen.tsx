@@ -9,18 +9,22 @@ import {
   ActivityIndicator,
   TextInput,
   Modal,
+  Image,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { INPUT_BASE_STYLE } from '../components/Input';
 import { logout, updateUser, setToken } from '../store/slices/authSlice';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { RootStackParamList } from '../types';
-import { getUserStats, updateCurrentUser, getCurrentUser } from '../api/auth';
+import { getUserStats, updateCurrentUser, getCurrentUser, UserUsageStats } from '../api/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { showSuccess, showError } from '../utils/toast';
+import { API_BASE_URL } from '../config/api';
 
 type ProfileScreenNavigationProp = StackNavigationProp<
   RootStackParamList,
@@ -36,15 +40,26 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
   const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.auth.user);
   const token = useAppSelector((state) => state.auth.token);
-  const [stats, setStats] = useState({
-    total_analyses: 0,
-    healthy_conversations: 0,
-    needs_attention: 0,
+  const [stats, setStats] = useState<UserUsageStats>({
+    conflict_analysis_used: 0,
+    conflict_analysis_limit: 10,
+    conflict_analysis_remaining: 10,
+    situation_judge_used: 0,
+    situation_judge_limit: 10,
+    situation_judge_remaining: 10,
+    expression_helper_used: 0,
+    expression_helper_limit: 10,
+    expression_helper_remaining: 10,
+    ai_chat_used: 0,
+    ai_chat_limit: 20,
+    ai_chat_remaining: 20,
+    user_level: 'free',
   });
   const [loading, setLoading] = useState(true);
   const [showNicknameModal, setShowNicknameModal] = useState(false);
   const [newNickname, setNewNickname] = useState('');
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -56,7 +71,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
         // 加载统计数据
         const statsData = await getUserStats(token);
         setStats(statsData);
-        
+
         // 刷新用户信息
         const userData = await getCurrentUser(token);
         if (userData) {
@@ -64,6 +79,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
             nickname: userData.nickname,
             email: userData.email,
             phone: userData.phone,
+            avatar: userData.avatar,
           }));
         }
       } catch (error) {
@@ -71,6 +87,77 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
       }
     }
     setLoading(false);
+  };
+
+  const handleChangeAvatar = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permissionResult.granted) {
+        showError({ title: '权限提示', message: '需要访问相册权限才能更换头像' });
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: false,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        setUploadingAvatar(true);
+
+        // 压缩和调整图片
+        const manipResult = await ImageManipulator.manipulateAsync(
+          result.assets[0].uri,
+          [{ resize: { width: 400 } }],
+          { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+        );
+
+        // 使用 FormData 上传图片
+        const formData = new FormData();
+        formData.append('avatar', {
+          uri: manipResult.uri,
+          type: 'image/jpeg',
+          name: 'avatar.jpg',
+        } as any);
+
+        // 上传头像
+        if (token) {
+          const response = await fetch(`${API_BASE_URL}/auth/avatar`, {
+            method: 'POST',
+            body: formData,
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'multipart/form-data',
+            },
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData?.error?.message || '上传头像失败');
+          }
+
+          const data = await response.json();
+
+          // 更新 Redux 中的 token 和用户信息
+          dispatch(setToken(data.access_token));
+          dispatch(updateUser({
+            nickname: data.nickname,
+            email: data.email,
+            phone: data.phone,
+            avatar: data.avatar,
+          }));
+
+          showSuccess({ title: '成功', message: '头像已更新' });
+        }
+      }
+    } catch (error: any) {
+      console.error('Failed to change avatar:', error);
+      showError({ title: '失败', message: error.message || '更换头像失败，请稍后重试' });
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   const handleLogout = () => {
@@ -111,10 +198,11 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
         const response = await updateCurrentUser(token, { nickname: newNickname.trim() });
         // 更新 Redux 中的 token 和用户信息
         dispatch(setToken(response.accessToken));
-        dispatch(updateUser({ 
+        dispatch(updateUser({
           nickname: response.nickname,
           email: response.email,
           phone: response.phone,
+          avatar: response.avatar,
         }));
         showSuccess({ title: '成功', message: '昵称已更新' });
         setShowNicknameModal(false);
@@ -168,14 +256,46 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
         {/* Profile Card */}
         <View style={[styles.profileCard, { backgroundColor: theme.colors.surface }]}>
           {/* Avatar */}
-          <LinearGradient
-            colors={[theme.colors.gradientStart, theme.colors.gradientEnd]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.avatar}
+          <TouchableOpacity
+            onPress={handleChangeAvatar}
+            activeOpacity={0.8}
+            disabled={uploadingAvatar}
           >
-            <Ionicons name="person" size={40} color={theme.colors.textWhite} />
-          </LinearGradient>
+            {user?.avatar ? (
+              <View style={styles.avatarContainer}>
+                <Image
+                  source={{ uri: user.avatar }}
+                  style={styles.avatarImage}
+                />
+                {uploadingAvatar && (
+                  <View style={styles.avatarOverlay}>
+                    <ActivityIndicator color="#FFF" />
+                  </View>
+                )}
+                <View style={[styles.editBadge, { backgroundColor: theme.colors.primary }]}>
+                  <Ionicons name="camera" size={14} color="#FFF" />
+                </View>
+              </View>
+            ) : (
+              <View style={styles.avatarContainer}>
+                <LinearGradient
+                  colors={[theme.colors.gradientStart, theme.colors.gradientEnd]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.avatar}
+                >
+                  {uploadingAvatar ? (
+                    <ActivityIndicator color="#FFF" />
+                  ) : (
+                    <Ionicons name="person" size={40} color={theme.colors.textWhite} />
+                  )}
+                </LinearGradient>
+                <View style={[styles.editBadge, { backgroundColor: theme.colors.primary }]}>
+                  <Ionicons name="camera" size={14} color="#FFF" />
+                </View>
+              </View>
+            )}
+          </TouchableOpacity>
 
           {/* Name with Edit Button */}
           <TouchableOpacity 
@@ -219,30 +339,77 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
           {loading ? (
             <ActivityIndicator color={theme.colors.primary} style={{ paddingVertical: 20 }} />
           ) : (
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <Text style={[styles.statValue, { color: theme.colors.primary }]}>
-                  {stats.total_analyses}
-                </Text>
-                <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
-                  分析次数
-                </Text>
+            <View style={styles.statsContainer}>
+              {/* 冲突复盘 */}
+              <View style={styles.usageItem}>
+                <View style={styles.usageHeader}>
+                  <Ionicons name="people-outline" size={18} color={theme.colors.textSecondary} />
+                  <Text style={[styles.usageLabel, { color: theme.colors.textPrimary }]}>
+                    冲突复盘
+                  </Text>
+                </View>
+                <View style={styles.usageInfo}>
+                  <Text style={[styles.usageText, { color: theme.colors.textSecondary }]}>
+                    {stats.conflict_analysis_used}/{stats.conflict_analysis_limit}
+                  </Text>
+                  <Text style={[styles.usageRemaining, { color: theme.colors.textTertiary }]}>
+                    剩余 {stats.conflict_analysis_remaining} 次
+                  </Text>
+                </View>
               </View>
-              <View style={[styles.statItem, styles.statItemBorder, { borderColor: theme.colors.border }]}>
-                <Text style={[styles.statValue, { color: theme.colors.primary }]}>
-                  {stats.healthy_conversations}
+
+              {/* 情况评理 */}
+              <View style={styles.usageItem}>
+                <View style={styles.usageHeader}>
+                  <Ionicons name="scale-outline" size={18} color={theme.colors.textSecondary} />
+                  <Text style={[styles.usageLabel, { color: theme.colors.textPrimary }]}>
+                    情况评理
+                  </Text>
+                </View>
+                <View style={styles.usageInfo}>
+                  <Text style={[styles.usageText, { color: theme.colors.textSecondary }]}>
+                    {stats.situation_judge_used}/{stats.situation_judge_limit}
                 </Text>
-                <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
-                  健康对话
+                  <Text style={[styles.usageRemaining, { color: theme.colors.textTertiary }]}>
+                    剩余 {stats.situation_judge_remaining} 次
                 </Text>
+                </View>
               </View>
-              <View style={styles.statItem}>
-                <Text style={[styles.statValue, { color: theme.colors.primary }]}>
-                  {stats.needs_attention}
+
+              {/* 表达助手 */}
+              <View style={styles.usageItem}>
+                <View style={styles.usageHeader}>
+                  <Ionicons name="chatbubble-outline" size={18} color={theme.colors.textSecondary} />
+                  <Text style={[styles.usageLabel, { color: theme.colors.textPrimary }]}>
+                    表达助手
+                  </Text>
+                </View>
+                <View style={styles.usageInfo}>
+                  <Text style={[styles.usageText, { color: theme.colors.textSecondary }]}>
+                    {stats.expression_helper_used}/{stats.expression_helper_limit}
                 </Text>
-                <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
-                  需要关注
+                  <Text style={[styles.usageRemaining, { color: theme.colors.textTertiary }]}>
+                    剩余 {stats.expression_helper_remaining} 次
                 </Text>
+                </View>
+              </View>
+
+              {/* AI对话 */}
+              <View style={styles.usageItem}>
+                <View style={styles.usageHeader}>
+                  <Ionicons name="sparkles-outline" size={18} color={theme.colors.textSecondary} />
+                  <Text style={[styles.usageLabel, { color: theme.colors.textPrimary }]}>
+                    AI对话
+                  </Text>
+                </View>
+                <View style={styles.usageInfo}>
+                  <Text style={[styles.usageText, { color: theme.colors.textSecondary }]}>
+                    {stats.ai_chat_used}/{stats.ai_chat_limit}
+                </Text>
+                  <Text style={[styles.usageRemaining, { color: theme.colors.textTertiary }]}>
+                    剩余 {stats.ai_chat_remaining} 次
+                </Text>
+                </View>
               </View>
             </View>
           )}
@@ -378,18 +545,56 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 1,
   },
+  avatarContainer: {
+    width: 80,
+    height: 80,
+    marginBottom: 12,
+    position: 'relative',
+  },
   avatar: {
     width: 80,
     height: 80,
     borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
     shadowColor: '#06B6D4',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
+  },
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    shadowColor: '#06B6D4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  avatarOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFF',
   },
   nicknameRow: {
     flexDirection: 'row',
@@ -433,6 +638,35 @@ const styles = StyleSheet.create({
   statsTitle: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  statsContainer: {
+    gap: 12,
+  },
+  usageItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  usageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  usageLabel: {
+    fontSize: 14,
+  },
+  usageInfo: {
+    alignItems: 'flex-end',
+  },
+  usageText: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  usageRemaining: {
+    fontSize: 11,
   },
   statsRow: {
     flexDirection: 'row',

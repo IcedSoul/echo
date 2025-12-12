@@ -9,6 +9,7 @@ export interface User {
   email?: string;
   phone?: string;
   nickname?: string;
+  avatar?: string;
   isAnonymous: boolean;
   createdAt: string;
 }
@@ -22,6 +23,7 @@ export interface LoginResponse {
   nickname?: string;
   email?: string;
   phone?: string;
+  avatar?: string;
 }
 
 export interface SendCodeResponse {
@@ -33,6 +35,7 @@ export interface SendCodeResponse {
 
 export interface UpdateUserRequest {
   nickname?: string;
+  avatar?: string;
 }
 
 // ============ 分析相关 ============

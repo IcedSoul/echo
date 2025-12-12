@@ -210,7 +210,7 @@ class LLMClient:
     ) -> Dict[str, Any]:
         """
         生成文本并返回元数据
-        
+
         Returns:
             {
                 "content": "生成的内容",
@@ -225,29 +225,29 @@ class LLMClient:
         """
         import time
         start_time = time.time()
-        
+
         if not self.api_key:
             raise LLMAPIError("OpenAI API Key 未配置")
-        
+
         messages = [
             {"role": "system", "content": system_message},
             {"role": "user", "content": prompt}
         ]
-        
+
         response_format = {"type": "json_object"} if force_json else None
-        
+
         result = await self._call_api(
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
             response_format=response_format
         )
-        
+
         latency_ms = int((time.time() - start_time) * 1000)
-        
+
         content = result["choices"][0]["message"]["content"]
         usage = result.get("usage", {})
-        
+
         return {
             "content": content,
             "metadata": {
@@ -258,6 +258,101 @@ class LLMClient:
                 "latency_ms": latency_ms
             }
         }
+
+    async def generate_stream(
+        self,
+        prompt: str,
+        system_message: str = "You are a helpful assistant.",
+        temperature: float = 0.7,
+        max_tokens: int = 2000
+    ):
+        """
+        流式生成文本
+
+        Args:
+            prompt: 用户提示词
+            system_message: 系统消息
+            temperature: 温度参数
+            max_tokens: 最大 token 数
+
+        Yields:
+            生成的文本片段
+
+        Raises:
+            LLMTimeoutError: 请求超时
+            LLMAPIError: API 调用错误
+        """
+        if not self.api_key:
+            raise LLMAPIError("OpenAI API Key 未配置")
+
+        messages = [
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": prompt}
+        ]
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "top_p": 0.9,
+            "stream": True  # 启用流式输出
+        }
+
+        logger.info(f"调用 LLM Stream - Model: {self.model}, Temperature: {temperature}")
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with client.stream(
+                    "POST",
+                    f"{self.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload
+                ) as response:
+                    if response.status_code != 200:
+                        error_msg = f"OpenAI API 错误 {response.status_code}"
+                        logger.error(error_msg)
+                        raise LLMAPIError(error_msg)
+
+                    # 逐行读取流式响应
+                    async for line in response.aiter_lines():
+                        if not line.strip():
+                            continue
+
+                        # SSE 格式: "data: {...}"
+                        if line.startswith("data: "):
+                            data_str = line[6:]  # 去掉 "data: " 前缀
+
+                            # 检查是否是结束标记
+                            if data_str == "[DONE]":
+                                break
+
+                            try:
+                                data = json.loads(data_str)
+                                # 提取内容增量
+                                delta = data.get("choices", [{}])[0].get("delta", {})
+                                content = delta.get("content", "")
+
+                                if content:
+                                    yield content
+
+                            except json.JSONDecodeError:
+                                logger.warning(f"无法解析流式数据: {data_str}")
+                                continue
+
+                    logger.info("LLM Stream 调用完成")
+
+        except httpx.TimeoutException as e:
+            logger.error(f"OpenAI API Stream 请求超时: {e}")
+            raise LLMTimeoutError(f"Request timeout: {e}")
+        except httpx.HTTPError as e:
+            logger.error(f"OpenAI API Stream HTTP 错误: {e}")
+            raise LLMAPIError(f"HTTP error: {e}")
 
 
 def parse_llm_json(raw_text: str) -> dict:

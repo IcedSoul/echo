@@ -116,6 +116,12 @@ class MongoDB:
             await codes.create_index("expires_at", expireAfterSeconds=0)
             logger.info("✓ verification_codes 集合索引创建完成")
             
+            # user_usage_limits 集合索引
+            usage_limits = cls.get_collection("user_usage_limits")
+            await usage_limits.create_index("user_id", unique=True)
+            await usage_limits.create_index("user_level")
+            logger.info("✓ user_usage_limits 集合索引创建完成")
+            
             logger.info("所有数据库索引创建完成")
             
         except Exception as e:

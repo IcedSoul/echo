@@ -22,6 +22,7 @@ from app.prompts.situation_judge import (
 )
 from app.db.mongodb import get_sessions_collection
 from app.core.security import encrypt_text
+from app.services.usage_limit_service import usage_limit_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -84,6 +85,32 @@ async def analyze_situation(request: SituationJudgeRequest):
             f"TextLength: {len(request.situation_text)}"
         )
         
+        # 检查使用限制
+        usage_check = await usage_limit_service.check_usage_limit(
+            request.user_id,
+            "situation_judge"
+        )
+        
+        if not usage_check.allowed:
+            logger.warning(
+                f"使用次数超限 - UserID: {request.user_id}, "
+                f"Feature: situation_judge"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error": {
+                        "code": "USAGE_LIMIT_EXCEEDED",
+                        "message": usage_check.message,
+                        "details": {
+                            "feature": "situation_judge",
+                            "used": usage_check.used,
+                            "limit": usage_check.limit
+                        }
+                    }
+                }
+            )
+        
         # 创建会话记录
         sessions = await get_sessions_collection()
         session_doc = {
@@ -96,6 +123,12 @@ async def analyze_situation(request: SituationJudgeRequest):
             "created_at": datetime.utcnow()
         }
         await sessions.insert_one(session_doc)
+        
+        # 增加使用次数
+        await usage_limit_service.increment_usage(
+            request.user_id,
+            "situation_judge"
+        )
         
         # 生成 Prompt
         prompt = get_situation_judge_prompt(

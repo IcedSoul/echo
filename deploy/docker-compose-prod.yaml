@@ -26,7 +26,7 @@ services:
     build:
       context: ../backend
       dockerfile: Dockerfile
-    image: uswccr.ccs.tencentyun.com/xiaofeng/wavecho:1.0.2
+    image: uswccr.ccs.tencentyun.com/xiaofeng/wavecho:1.0.3
     container_name: wavecho-backend-prod
     restart: always
     ports:
@@ -59,6 +59,12 @@ services:
       ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET}
       ALIYUN_SMS_SIGN_NAME: ${ALIYUN_SMS_SIGN_NAME}
       ALIYUN_SMS_TEMPLATE_CODE: ${ALIYUN_SMS_TEMPLATE_CODE}
+
+      # 腾讯云配置
+      TENCENT_SECRET_ID: ${TENCENT_SECRET_ID}
+      TENCENT_SECRET_KEY: ${TENCENT_SECRET_KEY}
+      TENCENT_OCR_REGION: ${TENCENT_OCR_REGION}
+
     depends_on:
       mongodb:
         condition: service_healthy

@@ -2,12 +2,13 @@
 认证相关 API 路由
 支持手机号和邮箱双通道验证码登录
 """
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime, timedelta
 import uuid
 import random
 import logging
+import base64
 
 from app.models.user import (
     VerificationCodeRequest,
@@ -22,6 +23,8 @@ from app.core.security import create_access_token, decode_access_token
 from app.db.mongodb import get_users_collection, get_verification_codes_collection
 from app.services.email_service import email_service
 from app.services.sms_service import sms_service
+from app.services.usage_limit_service import usage_limit_service
+from app.models.usage_limit import UsageLimitResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -205,6 +208,9 @@ async def verify_code_and_login(request: VerificationCodeVerify):
             
             await users_collection.insert_one(user_doc)
             
+            # 初始化用户使用限制
+            await usage_limit_service.initialize_user_limits(user_id)
+            
             is_new_user = True
             
             logger.info(f"New user registered - UserID: {user_id}, Account: {account}, Type: {account_type}")
@@ -236,24 +242,30 @@ async def verify_code_and_login(request: VerificationCodeVerify):
         nickname = user_doc.get("nickname")
         email = user_doc.get("email")
         phone = user_doc.get("phone")
-        
+        avatar = user_doc.get("avatar")
+        role = user_doc.get("role", "user")
+
         # 生成 JWT token（包含用户核心信息）
         token_data = {
             "user_id": user_id,
             "nickname": nickname,
             "email": email,
-            "phone": phone
+            "phone": phone,
+            "avatar": avatar,
+            "role": role
         }
-            
+
         access_token = create_access_token(data=token_data)
-        
+
         return Token(
             access_token=access_token,
             user_id=user_id,
             is_new_user=is_new_user,
             nickname=nickname,
             email=email,
-            phone=phone
+            phone=phone,
+            avatar=avatar,
+            role=role
         )
         
     except HTTPException:
@@ -324,7 +336,9 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             email=user_doc.get("email"),
             phone=user_doc.get("phone"),
             nickname=user_doc.get("nickname"),
+            avatar=user_doc.get("avatar"),
             is_anonymous=user_doc.get("is_anonymous", False),
+            role=user_doc.get("role", "user"),
             created_at=user_doc["created_at"]
         )
         
@@ -399,41 +413,50 @@ async def update_current_user(
         
         # 构建更新数据
         update_data = {"updated_at": datetime.utcnow()}
-        
+
         if request.nickname is not None:
             update_data["nickname"] = request.nickname
-        
+
+        if request.avatar is not None:
+            update_data["avatar"] = request.avatar
+
         # 更新数据库
         await users_collection.update_one(
             {"user_id": user_id},
             {"$set": update_data}
         )
-        
+
         # 获取更新后的用户信息
         updated_user = await users_collection.find_one({"user_id": user_id})
-        
+
         # 生成新的 token（包含更新后的用户信息）
         nickname = updated_user.get("nickname")
         email = updated_user.get("email")
         phone = updated_user.get("phone")
-        
+        avatar = updated_user.get("avatar")
+        role = updated_user.get("role", "user")
+
         token_data = {
             "user_id": user_id,
             "nickname": nickname,
             "email": email,
-            "phone": phone
+            "phone": phone,
+            "avatar": avatar,
+            "role": role
         }
-        
+
         new_access_token = create_access_token(data=token_data)
-        
+
         logger.info(f"User info updated - UserID: {user_id}")
-        
+
         return TokenRefreshResponse(
             access_token=new_access_token,
             user_id=user_id,
             nickname=nickname,
             email=email,
-            phone=phone
+            phone=phone,
+            avatar=avatar,
+            role=role
         )
         
     except HTTPException:
@@ -454,23 +477,26 @@ async def update_current_user(
 
 @router.get(
     "/stats",
+    response_model=UsageLimitResponse,
     summary="获取用户统计数据",
-    description="获取当前用户的分析统计数据"
+    description="获取当前用户的功能使用情况和限制"
 )
 async def get_user_stats(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
-    获取用户统计数据
-    
+    获取用户使用统计数据
+
     返回：
-    - total_analyses: 总分析次数
-    - healthy_conversations: 健康对话数（LOW风险）
-    - needs_attention: 需要关注数（MEDIUM/HIGH/CRITICAL风险）
+    - 冲突复盘：已使用、上限、剩余
+    - 情况评理：已使用、上限、剩余
+    - 表达助手：已使用、上限、剩余
+    - AI对话：已使用、上限、剩余
+    - 用户等级
     """
     try:
         # 解码 token
         token = credentials.credentials
         payload = decode_access_token(token)
-        
+
         if not payload:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -482,34 +508,14 @@ async def get_user_stats(credentials: HTTPAuthorizationCredentials = Depends(sec
                     }
                 }
             )
-        
+
         user_id = payload.get("user_id")
-        
-        # 从数据库查询用户的分析记录统计
-        from app.db.mongodb import get_sessions_collection
-        sessions_collection = await get_sessions_collection()
-        
-        # 统计总分析次数
-        total_analyses = await sessions_collection.count_documents({"user_id": user_id})
-        
-        # 统计健康对话数（LOW风险）
-        healthy_conversations = await sessions_collection.count_documents({
-            "user_id": user_id,
-            "risk_classification.risk_level": "LOW"
-        })
-        
-        # 统计需要关注数（MEDIUM/HIGH/CRITICAL风险）
-        needs_attention = await sessions_collection.count_documents({
-            "user_id": user_id,
-            "risk_classification.risk_level": {"$in": ["MEDIUM", "HIGH", "CRITICAL"]}
-        })
-        
-        return {
-            "total_analyses": total_analyses,
-            "healthy_conversations": healthy_conversations,
-            "needs_attention": needs_attention
-        }
-        
+
+        # 获取用户使用情况
+        usage_response = await usage_limit_service.get_usage_response(user_id)
+
+        return usage_response
+
     except HTTPException:
         raise
     except Exception as e:
@@ -520,6 +526,132 @@ async def get_user_stats(credentials: HTTPAuthorizationCredentials = Depends(sec
                 "error": {
                     "code": "GET_STATS_ERROR",
                     "message": "获取统计数据失败",
+                    "details": str(e)
+                }
+            }
+        )
+
+
+@router.post(
+    "/avatar",
+    response_model=TokenRefreshResponse,
+    summary="上传头像",
+    description="上传用户头像，返回新的 token"
+)
+async def upload_avatar(
+    avatar: UploadFile = File(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    上传用户头像
+
+    接收图片文件，转换为 base64 存储，返回新的 token
+    """
+    try:
+        # 解码 token
+        token = credentials.credentials
+        payload = decode_access_token(token)
+
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={
+                    "error": {
+                        "code": "INVALID_TOKEN",
+                        "message": "无效的 token",
+                        "details": {}
+                    }
+                }
+            )
+
+        user_id = payload.get("user_id")
+
+        # 验证文件类型
+        if not avatar.content_type or not avatar.content_type.startswith('image/'):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": {
+                        "code": "INVALID_FILE_TYPE",
+                        "message": "只支持图片格式",
+                        "details": {}
+                    }
+                }
+            )
+
+        # 读取文件内容
+        contents = await avatar.read()
+
+        # 验证文件大小（限制 5MB）
+        if len(contents) > 5 * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": {
+                        "code": "FILE_TOO_LARGE",
+                        "message": "图片大小不能超过 5MB",
+                        "details": {}
+                    }
+                }
+            )
+
+        # 转换为 base64
+        avatar_base64 = f"data:{avatar.content_type};base64,{base64.b64encode(contents).decode()}"
+
+        # 更新数据库
+        users_collection = await get_users_collection()
+        await users_collection.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "avatar": avatar_base64,
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
+
+        # 获取更新后的用户信息
+        updated_user = await users_collection.find_one({"user_id": user_id})
+
+        # 生成新的 token
+        nickname = updated_user.get("nickname")
+        email = updated_user.get("email")
+        phone = updated_user.get("phone")
+        role = updated_user.get("role", "user")
+
+        token_data = {
+            "user_id": user_id,
+            "nickname": nickname,
+            "email": email,
+            "phone": phone,
+            "avatar": avatar_base64,
+            "role": role
+        }
+
+        new_access_token = create_access_token(data=token_data)
+
+        logger.info(f"Avatar uploaded - UserID: {user_id}")
+
+        return TokenRefreshResponse(
+            access_token=new_access_token,
+            user_id=user_id,
+            nickname=nickname,
+            email=email,
+            phone=phone,
+            avatar=avatar_base64,
+            role=role
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"上传头像失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": {
+                    "code": "UPLOAD_AVATAR_ERROR",
+                    "message": "上传头像失败",
                     "details": str(e)
                 }
             }

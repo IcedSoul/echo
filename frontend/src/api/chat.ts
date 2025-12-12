@@ -151,3 +151,138 @@ export const deleteChatSession = async (
   });
 };
 
+/**
+ * 流式消息事件类型
+ */
+export interface StreamEvent {
+  type: 'session_id' | 'content' | 'done' | 'error';
+  session_id?: string;
+  content?: string;
+  timestamp?: string;
+  error?: {
+    code: string;
+    message: string;
+    details?: any;
+  };
+}
+
+/**
+ * 流式发送消息回调
+ */
+export interface StreamCallbacks {
+  onSessionId?: (sessionId: string) => void;
+  onContent?: (content: string) => void;
+  onDone?: (sessionId: string, timestamp: string) => void;
+  onError?: (error: any) => void;
+}
+
+/**
+ * 发送消息（流式）
+ */
+export const sendMessageStream = async (
+  request: SendMessageRequest,
+  callbacks: StreamCallbacks,
+  token?: string
+): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const url = `${apiClient.defaults.baseURL}/chat/send/stream`;
+
+    xhr.open('POST', url, true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+
+    let buffer = '';
+    let lastProcessedIndex = 0;
+
+    // 处理流式响应
+    xhr.onprogress = () => {
+      const newText = xhr.responseText.substring(lastProcessedIndex);
+      lastProcessedIndex = xhr.responseText.length;
+      buffer += newText;
+
+      // 按行分割
+      const lines = buffer.split('\n');
+      // 保留最后一个可能不完整的行
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.trim()) {
+          continue;
+        }
+
+        // SSE 格式: "data: {...}"
+        if (line.startsWith('data: ')) {
+          const dataStr = line.slice(6);
+
+          try {
+            const event: StreamEvent = JSON.parse(dataStr);
+
+            // 处理不同类型的事件
+            switch (event.type) {
+              case 'session_id':
+                if (event.session_id && callbacks.onSessionId) {
+                  callbacks.onSessionId(event.session_id);
+                }
+                break;
+
+              case 'content':
+                if (event.content && callbacks.onContent) {
+                  callbacks.onContent(event.content);
+                }
+                break;
+
+              case 'done':
+                if (callbacks.onDone && event.session_id && event.timestamp) {
+                  callbacks.onDone(event.session_id, event.timestamp);
+                }
+                break;
+
+              case 'error':
+                if (callbacks.onError && event.error) {
+                  callbacks.onError(event.error);
+                }
+                break;
+            }
+          } catch (e) {
+            console.warn('Failed to parse SSE data:', dataStr, e);
+          }
+        }
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        resolve();
+      } else {
+        const error = new Error(`Request failed with status ${xhr.status}`);
+        if (callbacks.onError) {
+          callbacks.onError(error);
+        }
+        reject(error);
+      }
+    };
+
+    xhr.onerror = () => {
+      const error = new Error('Network error occurred');
+      if (callbacks.onError) {
+        callbacks.onError(error);
+      }
+      reject(error);
+    };
+
+    xhr.ontimeout = () => {
+      const error = new Error('Request timeout');
+      if (callbacks.onError) {
+        callbacks.onError(error);
+      }
+      reject(error);
+    };
+
+    // 发送请求
+    xhr.send(JSON.stringify(request));
+  });
+};
+

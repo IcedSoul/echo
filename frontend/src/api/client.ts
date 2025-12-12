@@ -44,8 +44,26 @@ apiClient.interceptors.response.use(
         // 未授权：清除 token，跳转登录
         // TODO: 实现登出逻辑
         console.log('Unauthorized, please login again');
+      } else if (status === 403) {
+        // 403 可能是使用限制超限
+        const errorData = data as any;
+        if (errorData?.error?.code === 'USAGE_LIMIT_EXCEEDED') {
+          // 使用限制错误，抛出特定错误
+          const customError = new Error(errorData.error.message);
+          (customError as any).code = 'USAGE_LIMIT_EXCEEDED';
+          (customError as any).details = errorData.error.details;
+          return Promise.reject(customError);
+        }
       } else if (status === 500) {
         console.error('Server error:', data);
+      }
+      
+      // 处理后端返回的结构化错误
+      const errorData = data as any;
+      if (errorData?.error?.message) {
+        const customError = new Error(errorData.error.message);
+        (customError as any).code = errorData.error.code;
+        return Promise.reject(customError);
       }
     } else if (error.request) {
       // 请求发出但没有收到响应

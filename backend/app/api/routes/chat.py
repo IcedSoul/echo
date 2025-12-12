@@ -3,11 +3,13 @@ AI 聊天 API 路由
 """
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.responses import StreamingResponse
 from datetime import datetime
-from typing import Optional
+from typing import Optional, AsyncGenerator
 import logging
 import uuid
 import base64
+import json
 
 from app.models.chat import (
     SendMessageRequest,
@@ -23,6 +25,7 @@ from app.services.llm_client import llm_client, LLMAPIError, LLMTimeoutError
 from app.prompts.chat import CHAT_SYSTEM_MESSAGE
 from app.db.mongodb import MongoDB
 from app.core.security import decode_access_token
+from app.services.usage_limit_service import usage_limit_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -106,6 +109,32 @@ async def send_message(
         # 验证用户身份
         if credentials:
             decode_access_token(credentials.credentials)
+        
+        # 检查使用限制
+        usage_check = await usage_limit_service.check_usage_limit(
+            request.user_id,
+            "ai_chat"
+        )
+        
+        if not usage_check.allowed:
+            logger.warning(
+                f"使用次数超限 - UserID: {request.user_id}, "
+                f"Feature: ai_chat"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error": {
+                        "code": "USAGE_LIMIT_EXCEEDED",
+                        "message": usage_check.message,
+                        "details": {
+                            "feature": "ai_chat",
+                            "used": usage_check.used,
+                            "limit": usage_check.limit
+                        }
+                    }
+                }
+            )
         
         sessions = await get_chat_sessions_collection()
         now = datetime.utcnow()
@@ -202,6 +231,12 @@ async def send_message(
                 "$push": {"messages": {"$each": [user_message, ai_message]}},
                 "$set": {"updated_at": reply_time}
             }
+        )
+        
+        # 增加使用次数（每次对话算一次）
+        await usage_limit_service.increment_usage(
+            request.user_id,
+            "ai_chat"
         )
         
         logger.info(f"消息发送成功 - SessionID: {session_id}")
@@ -359,24 +394,24 @@ async def delete_chat_session(
     try:
         if credentials:
             decode_access_token(credentials.credentials)
-        
+
         sessions = await get_chat_sessions_collection()
-        
+
         result = await sessions.delete_one({
             "session_id": session_id,
             "user_id": user_id
         })
-        
+
         if result.deleted_count == 0:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"error": {"code": "SESSION_NOT_FOUND", "message": "会话不存在"}}
             )
-        
+
         logger.info(f"删除聊天会话 - SessionID: {session_id}")
-        
+
         return {"message": "会话已删除", "session_id": session_id}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -385,4 +420,194 @@ async def delete_chat_session(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"error": {"code": "DELETE_SESSION_FAILED", "message": str(e)}}
         )
+
+
+@router.post(
+    "/chat/send/stream",
+    summary="发送消息（流式）",
+    description="发送消息并以流式方式获取AI回复"
+)
+async def send_message_stream(
+    request: SendMessageRequest,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
+    """发送消息并以流式方式获取AI回复"""
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        """SSE 事件生成器"""
+        try:
+            # 验证用户身份
+            if credentials:
+                decode_access_token(credentials.credentials)
+
+            # 检查使用限制
+            usage_check = await usage_limit_service.check_usage_limit(
+                request.user_id,
+                "ai_chat"
+            )
+
+            if not usage_check.allowed:
+                logger.warning(
+                    f"使用次数超限 - UserID: {request.user_id}, Feature: ai_chat"
+                )
+                error_data = {
+                    "error": {
+                        "code": "USAGE_LIMIT_EXCEEDED",
+                        "message": usage_check.message,
+                        "details": {
+                            "feature": "ai_chat",
+                            "used": usage_check.used,
+                            "limit": usage_check.limit
+                        }
+                    }
+                }
+                yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+                return
+
+            sessions = await get_chat_sessions_collection()
+            now = datetime.utcnow()
+
+            # 如果没有 session_id，创建新会话
+            if not request.session_id:
+                session_id = str(uuid.uuid4())
+                title = request.message[:20] + "..." if len(request.message) > 20 else request.message
+                session_doc = {
+                    "session_id": session_id,
+                    "user_id": request.user_id,
+                    "title": title,
+                    "messages": [],
+                    "created_at": now,
+                    "updated_at": now
+                }
+                await sessions.insert_one(session_doc)
+                logger.info(f"自动创建聊天会话 - SessionID: {session_id}")
+
+                # 发送 session_id
+                yield f"data: {json.dumps({'type': 'session_id', 'session_id': session_id}, ensure_ascii=False)}\n\n"
+            else:
+                session_id = request.session_id
+                # 验证会话存在且属于该用户
+                session = await sessions.find_one({
+                    "session_id": session_id,
+                    "user_id": request.user_id
+                })
+                if not session:
+                    error_data = {"error": {"code": "SESSION_NOT_FOUND", "message": "会话不存在"}}
+                    yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+                    return
+
+            # 获取会话历史
+            session = await sessions.find_one({"session_id": session_id})
+            history = session.get("messages", []) if session else []
+
+            # 处理图片（如果有）
+            image_url = None
+            if request.image_base64:
+                image_url = f"data:image/jpeg;base64,{request.image_base64[:100]}..."
+
+            # 创建用户消息记录
+            user_message = {
+                "role": "user",
+                "content": request.message,
+                "timestamp": now.isoformat(),
+                "image_url": image_url
+            }
+
+            # 构建对话上下文
+            context_parts = []
+            recent_history = history[-10:] if len(history) > 10 else history
+            for msg in recent_history:
+                role_label = "用户" if msg["role"] == "user" else "助手"
+                context_parts.append(f"{role_label}: {msg['content']}")
+
+            if context_parts:
+                context_str = "\n".join(context_parts)
+                full_prompt = f"以下是之前的对话记录：\n\n{context_str}\n\n用户现在说: {request.message}\n\n请作为助手回复用户。"
+            else:
+                full_prompt = request.message
+
+            if image_url:
+                full_prompt = f"[用户发送了一张图片]\n\n{full_prompt}"
+
+            # 流式调用 LLM
+            ai_content_parts = []
+            try:
+                async for content_chunk in llm_client.generate_stream(
+                    prompt=full_prompt,
+                    system_message=CHAT_SYSTEM_MESSAGE,
+                    temperature=0.8,
+                    max_tokens=1000
+                ):
+                    ai_content_parts.append(content_chunk)
+                    # 发送内容片段
+                    chunk_data = {
+                        "type": "content",
+                        "content": content_chunk
+                    }
+                    yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
+
+                ai_content = "".join(ai_content_parts)
+
+            except (LLMAPIError, LLMTimeoutError) as e:
+                logger.error(f"LLM 调用失败 - SessionID: {session_id}, Error: {e}")
+                ai_content = get_fallback_response()
+                # 发送降级响应
+                chunk_data = {
+                    "type": "content",
+                    "content": ai_content
+                }
+                yield f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
+
+            # 创建AI回复记录
+            reply_time = datetime.utcnow()
+            ai_message = {
+                "role": "assistant",
+                "content": ai_content,
+                "timestamp": reply_time.isoformat()
+            }
+
+            # 更新会话
+            await sessions.update_one(
+                {"session_id": session_id},
+                {
+                    "$push": {"messages": {"$each": [user_message, ai_message]}},
+                    "$set": {"updated_at": reply_time}
+                }
+            )
+
+            # 增加使用次数
+            await usage_limit_service.increment_usage(
+                request.user_id,
+                "ai_chat"
+            )
+
+            # 发送完成信号
+            done_data = {
+                "type": "done",
+                "session_id": session_id,
+                "timestamp": reply_time.isoformat()
+            }
+            yield f"data: {json.dumps(done_data, ensure_ascii=False)}\n\n"
+
+            logger.info(f"流式消息发送成功 - SessionID: {session_id}")
+
+        except Exception as e:
+            logger.error(f"流式发送消息失败: {e}", exc_info=True)
+            error_data = {
+                "error": {
+                    "code": "SEND_MESSAGE_FAILED",
+                    "message": str(e)
+                }
+            }
+            yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # 禁用 nginx 缓冲
+        }
+    )
 
